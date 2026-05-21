@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
     // @ts-ignore
     const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default
-    const data = await pdfParse(buffer)
+    const data = await pdfParse(buffer, { max: 10 })
     return NextResponse.json({ text: data.text, pages: data.numpages })
   } catch (error) {
     console.error('Upload error:', error)
