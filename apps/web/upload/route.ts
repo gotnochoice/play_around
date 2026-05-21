@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ text: buffer.toString('utf-8') })
     }
 
+    // @ts-ignore
     const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default
     const data = await pdfParse(buffer)
     return NextResponse.json({ text: data.text, pages: data.numpages })
