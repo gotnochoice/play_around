@@ -63,4 +63,5 @@ export interface ConversationState {
 
 export interface ChatApiRequest {
   messages: Array<{ role: MessageRole; content: string }>
+  deckContext?: string
 }
