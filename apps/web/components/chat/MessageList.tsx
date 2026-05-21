@@ -9,26 +9,23 @@ interface MessageListProps {
   messages: Message[]
   isStreaming: boolean
   streamingMessageId: string | null
+  isThinking: boolean
 }
 
-export function MessageList({ messages, isStreaming, streamingMessageId }: MessageListProps) {
+export function MessageList({ messages, isStreaming, streamingMessageId, isThinking }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, isStreaming])
+  }, [messages, isStreaming, isThinking])
 
   return (
     <div className="flex-1 overflow-y-auto py-4">
       <div className="mx-auto max-w-3xl space-y-1">
         {messages.map((message) => (
-          <MessageBubble
-            key={message.id}
-            message={message}
-            isStreaming={isStreaming && message.id === streamingMessageId}
-          />
+          <MessageBubble key={message.id} message={message} isStreaming={isStreaming && message.id === streamingMessageId} />
         ))}
-        {isStreaming && streamingMessageId === null && <TypingIndicator />}
+        {isThinking && <TypingIndicator />}
         <div ref={bottomRef} />
       </div>
     </div>
