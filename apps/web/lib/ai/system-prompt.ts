@@ -153,7 +153,7 @@ IMPORTANT RULES:
 9. Never use em dashes. Use a comma or full stop instead.
 10. If the founder uploaded a pitch deck, use it as silent background context only. Ask your questions conversationally, do not reference or quote the deck.`
 
-export const INITIAL_GREETING = `Hi, I'm Deck, your financial co-pilot.
+export const INITIAL_GREETING = `Hi, I'm FounderDeck, your financial co-pilot.
 
 I'll ask you a few short questions to build your financial picture. Let's start simple.
 
