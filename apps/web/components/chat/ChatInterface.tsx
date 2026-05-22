@@ -184,12 +184,10 @@ export function ChatInterface() {
       <StageSidebar state={state} />
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Spreadsheet main area */}
         <div className="flex-1 overflow-hidden border-r border-slate-200">
           <ModelSpreadsheet state={state} />
         </div>
 
-        {/* Chat panel */}
         <div className="flex w-[380px] shrink-0 flex-col overflow-hidden bg-brand-light/30">
           <header className="shrink-0 border-b border-slate-100 bg-white px-4 py-3">
             <div className="flex items-center justify-between">
