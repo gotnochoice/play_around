@@ -42,6 +42,9 @@ export interface CapturedAssumptions {
   team_size: number | null
   growth_rate_monthly: number | null
   gross_margin: number | null
+  revenue_currency: string | null
+  cost_currency: string | null
+  is_multi_currency: boolean | null
   [key: string]: unknown
 }
 
