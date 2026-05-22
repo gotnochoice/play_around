@@ -79,7 +79,7 @@ export function StageSidebar({ state }: StageSidebarProps) {
           </div>
           <span className="font-semibold tracking-tight">FounderDeck</span>
         </div>
-        <p className="mt-1 text-xs text-white/50">Financial co-pilot for founders</p>
+        <p className="mt-1 text-xs text-white/50">Your Personal Financial Model Builder</p>
       </div>
 
       {/* Stages */}
