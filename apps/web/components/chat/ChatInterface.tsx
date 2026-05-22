@@ -20,7 +20,7 @@ function initialState(): ConversationState {
   const greetingId = uuidv4()
   return {
     messages: [{ id: greetingId, role: 'assistant', content: INITIAL_GREETING, timestamp: new Date() }],
-    currentStage: (meta?.stage ?? 1) as StageId,
+    currentStage: (meta?.stage ?? 0) as StageId,
     completedStages: [],
     businessType: meta?.business_type ?? null,
     assumptions: meta?.assumptions ?? {},
@@ -152,9 +152,9 @@ export function ChatInterface() {
               )}
               <div className="flex items-center gap-2">
                 <div className="h-1.5 w-32 overflow-hidden rounded-full bg-purple-100">
-                  <div className="h-full rounded-full bg-brand-blue transition-all duration-500" style={{ width: `${((state.currentStage - 1) / 5) * 100}%` }} />
+                  <div className="h-full rounded-full bg-brand-blue transition-all duration-500" style={{ width: `${(state.currentStage / 6) * 100}%` }} />
                 </div>
-                <span className="text-xs text-slate-400">{Math.round(((state.currentStage - 1) / 5) * 100)}%</span>
+                <span className="text-xs text-slate-400">{Math.round((state.currentStage / 6) * 100)}%</span>
               </div>
             </div>
           </div>
