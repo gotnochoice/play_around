@@ -23,7 +23,7 @@ export function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
     >
       {isAssistant && (
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-navy text-xs font-bold text-white">
-          D
+          FD
         </div>
       )}
 
