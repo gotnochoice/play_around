@@ -19,7 +19,7 @@ body {
 body {
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-  background: linear-gradient(135deg, #f5f0ff 0%, #ffffff 60%);
+  background: linear-gradient(135deg, #eef2ff 0%, #ffffff 50%);
 }
 
 ::-webkit-scrollbar {
