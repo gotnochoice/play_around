@@ -106,7 +106,7 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
       <div className="border-t border-slate-100 bg-white px-4 py-4">
         {pendingFile && (
           <div className="mb-3 flex items-center gap-2">
-            <span className="flex items-center gap-1.5 rounded-full bg-brand-navy/5 px-3 py-1.5 text-xs font-medium text-brand-navy ring-1 ring-inset ring-brand-navy/10">
+            <span className="flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-600 ring-1 ring-inset ring-indigo-100">
               📎 {pendingFile.name}
               {uploading && <span className="ml-1 opacity-60">uploading…</span>}
             </span>
@@ -124,7 +124,7 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
         <div
           className={cn(
             'flex items-end gap-2 rounded-2xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 transition-all duration-200',
-            'focus-within:border-brand-navy/30 focus-within:bg-white focus-within:ring-2 focus-within:ring-brand-navy/10',
+            'focus-within:border-indigo-200 focus-within:bg-white focus-within:ring-2 focus-within:ring-indigo-50',
             disabled && 'opacity-50',
           )}
         >
@@ -132,7 +132,7 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled || uploading}
             title="Attach pitch deck (PDF)"
-            className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-brand-navy disabled:cursor-not-allowed"
+            className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-600 disabled:cursor-not-allowed"
           >
             <Paperclip className="h-4 w-4" />
           </button>
@@ -165,7 +165,7 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
                 'shrink-0 rounded-lg p-1.5 transition-all disabled:cursor-not-allowed',
                 isRecording
                   ? 'animate-pulse bg-red-100 text-red-500'
-                  : 'text-slate-400 hover:bg-slate-100 hover:text-brand-navy',
+                  : 'text-slate-400 hover:bg-slate-100 hover:text-indigo-600',
               )}
             >
               {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
@@ -179,7 +179,7 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
             className={cn(
               'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-all',
               value.trim() && !disabled
-                ? 'bg-brand-navy text-white shadow-sm hover:bg-brand-navy/90'
+                ? 'bg-brand-navy text-white shadow-sm hover:opacity-90'
                 : 'cursor-not-allowed bg-slate-100 text-slate-300',
             )}
           >
