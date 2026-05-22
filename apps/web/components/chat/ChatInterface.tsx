@@ -137,8 +137,11 @@ export function ChatInterface() {
             <div>
               <h1 className="text-sm font-semibold text-slate-800">Financial Model Builder</h1>
               <p className="text-xs text-slate-500">
-                Stage {state.currentStage} of 6 ·{' '}
-                {['Business Discovery', 'Revenue Deep Dive', 'Financial Position', 'Cost Structure', 'Growth Plans', 'Review'][state.currentStage - 1]}
+                {state.currentStage === 0
+                  ? 'Setup'
+                  : `Stage ${state.currentStage} of 6`}
+                {' · '}
+                {['Model Purpose', 'Business Discovery', 'Revenue Deep Dive', 'Financial Position', 'Cost Structure', 'Growth Plans', 'Review'][state.currentStage]}
               </p>
             </div>
             <div className="flex items-center gap-3">
