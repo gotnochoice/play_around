@@ -2,34 +2,39 @@ import type { Stage } from '@/types'
 
 export const STAGES: Stage[] = [
   {
+    id: 0,
+    name: 'Model Purpose',
+    description: 'Type of model, time horizon, granularity, audience',
+  },
+  {
     id: 1,
-    name: 'Business Overview',
-    description: 'What you do, who you serve, how you make money',
+    name: 'Business Discovery',
+    description: 'What you do, the insight, your customers, your moat',
   },
   {
     id: 2,
-    name: 'Current Financials',
-    description: 'Cash on hand, current revenue and spending',
+    name: 'Revenue Deep Dive',
+    description: 'Currency and revenue stream by stream',
   },
   {
     id: 3,
-    name: 'Revenue Model',
-    description: 'Pricing, customers, and how revenue works',
+    name: 'Financial Position',
+    description: 'Cash on hand and current burn',
   },
   {
     id: 4,
     name: 'Cost Structure',
-    description: 'Team, tools, and what you spend each month',
+    description: 'Team, tools, marketing and other costs',
   },
   {
     id: 5,
     name: 'Growth Plans',
-    description: 'Where you expect to be in 12 months',
+    description: 'Targets, growth levers, fundraising',
   },
   {
     id: 6,
     name: 'Review',
-    description: 'Confirm everything before building your model',
+    description: 'Confirm everything before building the model',
   },
 ]
 
