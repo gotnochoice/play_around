@@ -22,7 +22,7 @@ export type BusinessType =
   | 'LOGISTICS'
   | null
 
-export type StageId = 1 | 2 | 3 | 4 | 5 | 6
+export type StageId = 0 | 1 | 2 | 3 | 4 | 5 | 6
 
 export interface Stage {
   id: StageId
@@ -30,7 +30,15 @@ export interface Stage {
   description: string
 }
 
+export interface ModelPurpose {
+  type: 'projection' | 'snapshot' | 'scenario' | null
+  horizon: '12mo' | '3yr' | '5yr' | null
+  granularity: 'monthly' | 'quarterly' | 'annual' | null
+  audience: 'vc' | 'board' | 'acquirer' | 'personal' | null
+}
+
 export interface CapturedAssumptions {
+  founder_name: string | null
   current_cash: number | null
   monthly_revenue: number | null
   is_pre_revenue: boolean | null
@@ -42,6 +50,9 @@ export interface CapturedAssumptions {
   team_size: number | null
   growth_rate_monthly: number | null
   gross_margin: number | null
+  revenue_currency: string | null
+  cost_currency: string | null
+  is_multi_currency: boolean | null
   [key: string]: unknown
 }
 
@@ -49,6 +60,7 @@ export interface ConversationMeta {
   stage: StageId
   stage_name: string
   business_type: BusinessType
+  model_purpose?: ModelPurpose
   assumptions: Partial<CapturedAssumptions>
 }
 
@@ -58,9 +70,11 @@ export interface ConversationState {
   completedStages: StageId[]
   businessType: BusinessType
   assumptions: Partial<CapturedAssumptions>
+  modelPurpose: ModelPurpose
   isStreaming: boolean
 }
 
 export interface ChatApiRequest {
   messages: Array<{ role: MessageRole; content: string }>
+  deckContext?: string
 }
