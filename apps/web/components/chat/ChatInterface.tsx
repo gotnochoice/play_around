@@ -129,10 +129,10 @@ export function ChatInterface() {
   }, [state.isStreaming, state.messages, isThinking, deckContext])
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-indigo-50/40 to-white">
+    <div className="flex h-screen overflow-hidden bg-brand-light/30">
       <StageSidebar state={state} />
       <main className="flex flex-1 flex-col overflow-hidden">
-        <header className="border-b border-slate-100 bg-white/80 px-6 py-4 backdrop-blur-sm">
+        <header className="border-b border-purple-100 bg-white px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-sm font-semibold text-slate-800">Financial Model Builder</h1>
