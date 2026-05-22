@@ -80,13 +80,11 @@ export function ChatInterface() {
     if (state.isStreaming || isThinking) return
     dispatch({ type: 'ADD_USER_MESSAGE', content })
     setIsThinking(true)
-          const history = [
-        ...state.messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
+    const allMessages = [
+        ...state.messages.map((m) => ({ role: m.role, content: m.content })),
         { role: 'user' as const, content },
       ]
+      const history = allMessages.slice(-12)
     const assistantId = uuidv4()
     streamingIdRef.current = assistantId
     abortRef.current = new AbortController()
