@@ -171,7 +171,6 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-white">
-      {/* Sheet title bar */}
       <div className="shrink-0 border-b border-slate-200 bg-brand-navy px-5 py-3">
         <div className="flex items-center justify-between">
           <div>
@@ -190,7 +189,6 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
         </div>
       </div>
 
-      {/* Formula bar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-1.5">
         <span className="min-w-[36px] rounded border border-slate-200 bg-white px-1.5 py-0.5 text-center font-mono text-[11px] text-slate-500">
           A1
@@ -204,18 +202,15 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
         </span>
       </div>
 
-      {/* Column headers */}
       <div className="flex shrink-0 border-b border-slate-200 bg-slate-100 text-[11px] font-medium text-slate-400">
         <div className="w-8 shrink-0 border-r border-slate-200 py-1 text-center">#</div>
         <div className="w-44 shrink-0 border-r border-slate-200 px-3 py-1">A</div>
         <div className="flex-1 px-3 py-1">B</div>
       </div>
 
-      {/* Data rows */}
       <div className="flex-1 overflow-y-auto">
         {sections.map((section) => (
           <div key={section.title}>
-            {/* Section header row */}
             <div className="flex items-center border-b border-slate-200 bg-indigo-50/70">
               <div className="w-8 shrink-0 border-r border-slate-200 py-2 text-center text-[10px] text-slate-400">
                 {rowNum++}
@@ -226,7 +221,6 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
               <div className="flex-1 px-3 py-2" />
             </div>
 
-            {/* Data rows */}
             {section.rows.map((row, i) => (
               <div
                 key={row.label}
@@ -263,7 +257,6 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
           </div>
         ))}
 
-        {/* Padding rows to fill remaining space */}
         {Array.from({ length: 8 }).map((_, i) => (
           <div
             key={`pad-${i}`}
