@@ -91,7 +91,7 @@ export function ChatInterface() {
       ...state.messages.map((m) => ({ role: m.role, content: m.content })),
       { role: 'user' as const, content },
     ]
-    const history = allMessages.slice(-12)
+    const history = allMessages.slice(-50)
     const assistantId = uuidv4()
     streamingIdRef.current = assistantId
     abortRef.current = new AbortController()
