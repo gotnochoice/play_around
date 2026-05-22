@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { MessageList } from './MessageList'
 import { MessageInput } from './MessageInput'
@@ -61,6 +61,14 @@ export function ChatInterface() {
   const [deckFileName, setDeckFileName] = useState<string | null>(null)
   const streamingIdRef = useRef<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const inputRef = useRef<{ focus: () => void }>(null)
+
+  // Return focus to the input after each AI response
+  useEffect(() => {
+    if (!state.isStreaming && !isThinking) {
+      setTimeout(() => inputRef.current?.focus(), 50)
+    }
+  }, [state.isStreaming, isThinking])
 
   const handleFileUpload = useCallback(async (file: File) => {
     const formData = new FormData()
@@ -81,10 +89,10 @@ export function ChatInterface() {
     dispatch({ type: 'ADD_USER_MESSAGE', content })
     setIsThinking(true)
     const allMessages = [
-        ...state.messages.map((m) => ({ role: m.role, content: m.content })),
-        { role: 'user' as const, content },
-      ]
-      const history = allMessages.slice(-12)
+      ...state.messages.map((m) => ({ role: m.role, content: m.content })),
+      { role: 'user' as const, content },
+    ]
+    const history = allMessages.slice(-12)
     const assistantId = uuidv4()
     streamingIdRef.current = assistantId
     abortRef.current = new AbortController()
@@ -122,16 +130,16 @@ export function ChatInterface() {
   }, [state.isStreaming, state.messages, isThinking, deckContext])
 
   return (
-    <div className="flex h-screen overflow-hidden bg-brand-light/30">
+    <div className="flex h-screen overflow-hidden bg-gradient-to-br from-indigo-50/40 to-white">
       <StageSidebar state={state} />
       <main className="flex flex-1 flex-col overflow-hidden">
-        <header className="border-b border-purple-100 bg-white px-6 py-4">
+        <header className="border-b border-slate-100 bg-white/80 px-6 py-4 backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-sm font-semibold text-slate-800">Financial Model Builder</h1>
               <p className="text-xs text-slate-500">
-                Stage {state.currentStage} of 6 —{' '}
-                {['Business Overview', 'Current Financials', 'Revenue Model', 'Cost Structure', 'Growth Plans', 'Review'][state.currentStage - 1]}
+                Stage {state.currentStage} of 6 ·{' '}
+                {['Business Discovery', 'Revenue Deep Dive', 'Financial Position', 'Cost Structure', 'Growth Plans', 'Review'][state.currentStage - 1]}
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -150,7 +158,7 @@ export function ChatInterface() {
           </div>
         </header>
         <MessageList messages={state.messages} isStreaming={state.isStreaming} streamingMessageId={streamingIdRef.current} isThinking={isThinking} />
-        <MessageInput onSend={sendMessage} onFileUpload={handleFileUpload} disabled={state.isStreaming || isThinking} placeholder={state.currentStage === 6 ? 'Confirm or correct anything above…' : 'Type your answer…'} />
+        <MessageInput ref={inputRef} onSend={sendMessage} onFileUpload={handleFileUpload} disabled={state.isStreaming || isThinking} placeholder={state.currentStage === 6 ? 'Confirm or correct anything above…' : 'Type your answer…'} />
       </main>
     </div>
   )
