@@ -63,7 +63,6 @@ export function ChatInterface() {
   const abortRef = useRef<AbortController | null>(null)
   const inputRef = useRef<{ focus: () => void }>(null)
 
-  // Return focus to the input after each AI response
   useEffect(() => {
     if (!state.isStreaming && !isThinking) {
       setTimeout(() => inputRef.current?.focus(), 50)
@@ -89,10 +88,10 @@ export function ChatInterface() {
     dispatch({ type: 'ADD_USER_MESSAGE', content })
     setIsThinking(true)
     const allMessages = [
-      ...state.messages.map((m) => ({ role: m.role, content: m.content })),
-      { role: 'user' as const, content },
-    ]
-    const history = allMessages.slice(-12)
+        ...state.messages.map((m) => ({ role: m.role, content: m.content })),
+        { role: 'user' as const, content },
+      ]
+      const history = allMessages.slice(-12)
     const assistantId = uuidv4()
     streamingIdRef.current = assistantId
     abortRef.current = new AbortController()
