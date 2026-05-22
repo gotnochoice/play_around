@@ -22,7 +22,7 @@ export type BusinessType =
   | 'LOGISTICS'
   | null
 
-export type StageId = 1 | 2 | 3 | 4 | 5 | 6
+export type StageId = 0 | 1 | 2 | 3 | 4 | 5 | 6
 
 export interface Stage {
   id: StageId
