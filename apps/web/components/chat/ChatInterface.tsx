@@ -88,10 +88,10 @@ export function ChatInterface() {
     dispatch({ type: 'ADD_USER_MESSAGE', content })
     setIsThinking(true)
     const allMessages = [
-        ...state.messages.map((m) => ({ role: m.role, content: m.content })),
-        { role: 'user' as const, content },
-      ]
-      const history = allMessages.slice(-12)
+      ...state.messages.map((m) => ({ role: m.role, content: m.content })),
+      { role: 'user' as const, content },
+    ]
+    const history = allMessages.slice(-12)
     const assistantId = uuidv4()
     streamingIdRef.current = assistantId
     abortRef.current = new AbortController()
@@ -129,10 +129,10 @@ export function ChatInterface() {
   }, [state.isStreaming, state.messages, isThinking, deckContext])
 
   return (
-    <div className="flex h-screen overflow-hidden bg-brand-light/30">
+    <div className="flex h-screen overflow-hidden bg-white">
       <StageSidebar state={state} />
       <main className="flex flex-1 flex-col overflow-hidden">
-        <header className="border-b border-purple-100 bg-white px-6 py-4">
+        <header className="border-b border-slate-100 bg-white px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-sm font-semibold text-slate-800">Financial Model Builder</h1>
@@ -146,21 +146,35 @@ export function ChatInterface() {
             </div>
             <div className="flex items-center gap-3">
               {deckFileName && (
-                <span className="flex items-center gap-1.5 rounded-full bg-brand-blue/10 px-3 py-1 text-xs font-medium text-brand-blue">
+                <span className="flex items-center gap-1.5 rounded-full bg-brand-navy/5 px-3 py-1 text-xs font-medium text-brand-navy ring-1 ring-inset ring-brand-navy/10">
                   📎 {deckFileName}
                 </span>
               )}
               <div className="flex items-center gap-2">
-                <div className="h-1.5 w-32 overflow-hidden rounded-full bg-purple-100">
-                  <div className="h-full rounded-full bg-brand-blue transition-all duration-500" style={{ width: `${(state.currentStage / 6) * 100}%` }} />
+                <div className="h-1.5 w-32 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-brand-navy transition-all duration-500"
+                    style={{ width: `${(state.currentStage / 6) * 100}%` }}
+                  />
                 </div>
                 <span className="text-xs text-slate-400">{Math.round((state.currentStage / 6) * 100)}%</span>
               </div>
             </div>
           </div>
         </header>
-        <MessageList messages={state.messages} isStreaming={state.isStreaming} streamingMessageId={streamingIdRef.current} isThinking={isThinking} />
-        <MessageInput ref={inputRef} onSend={sendMessage} onFileUpload={handleFileUpload} disabled={state.isStreaming || isThinking} placeholder={state.currentStage === 6 ? 'Confirm or correct anything above…' : 'Type your answer…'} />
+        <MessageList
+          messages={state.messages}
+          isStreaming={state.isStreaming}
+          streamingMessageId={streamingIdRef.current}
+          isThinking={isThinking}
+        />
+        <MessageInput
+          ref={inputRef}
+          onSend={sendMessage}
+          onFileUpload={handleFileUpload}
+          disabled={state.isStreaming || isThinking}
+          placeholder={state.currentStage === 6 ? 'Confirm or correct anything above…' : 'Type your answer…'}
+        />
       </main>
     </div>
   )
