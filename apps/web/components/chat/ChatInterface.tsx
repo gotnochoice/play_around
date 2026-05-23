@@ -7,8 +7,7 @@ import { MessageInput } from './MessageInput'
 import { StageSidebar } from './StageSidebar'
 import { ModelSpreadsheet } from './ModelSpreadsheet'
 import { parseMetaBlock } from '@/lib/utils'
-import { INITIAL_GREETING } from '@/lib/ai/system-prompt'
-import type { ConversationState, ModelPurpose, StageId } from '@/types'
+import type { ConversationState, ModelPurpose, OnboardingData, StageId } from '@/types'
 
 type Action =
   | { type: 'ADD_USER_MESSAGE'; content: string }
@@ -23,16 +22,57 @@ const EMPTY_MODEL_PURPOSE: ModelPurpose = {
   audience: null,
 }
 
-function initialState(): ConversationState {
-  const { meta } = parseMetaBlock(INITIAL_GREETING)
+const BUSINESS_TYPE_MAP: Record<string, string> = {
+  B2B_SAAS: 'B2B SaaS',
+  CONSUMER_APP: 'Consumer App',
+  MARKETPLACE: 'Marketplace',
+  ECOMMERCE: 'E-commerce',
+  PROFESSIONAL_SERVICES: 'Professional Services',
+  FINTECH: 'Fintech',
+  HARDWARE: 'Hardware',
+  MEDIA: 'Media / Content',
+  AGRITECH: 'AgriTech',
+  EDTECH: 'EdTech',
+  HEALTHTECH: 'HealthTech',
+  LOGISTICS: 'Logistics',
+}
+
+function buildInitialGreeting(data: OnboardingData): string {
+  const meta = {
+    stage: 0,
+    stage_name: 'Model Purpose',
+    business_type: data.businessType,
+    model_purpose: { type: null, horizon: null, granularity: null, audience: null },
+    assumptions: {
+      founder_name: data.founderName,
+      business_name: data.businessName,
+      revenue_currency: data.currency,
+    },
+    quick_replies: ['Projection', 'Snapshot today', 'Scenario analysis'],
+  }
+  return `Good to have you here, ${data.founderName}.
+
+Before we get into ${data.businessName}'s numbers, I need to understand what kind of model this is. Are you building a forward-looking projection of where the business is going, a snapshot of where things stand today, or a scenario analysis to stress-test different bets?
+
+<meta>${JSON.stringify(meta)}</meta>`
+}
+
+function buildInitialState(data: OnboardingData): ConversationState {
   const greetingId = uuidv4()
+  const greeting = buildInitialGreeting(data)
+  const { meta } = parseMetaBlock(greeting)
   return {
-    messages: [{ id: greetingId, role: 'assistant', content: INITIAL_GREETING, timestamp: new Date() }],
-    currentStage: (meta?.stage ?? 0) as StageId,
+    messages: [{ id: greetingId, role: 'assistant', content: greeting, timestamp: new Date() }],
+    currentStage: 0,
     completedStages: [],
-    businessType: meta?.business_type ?? null,
-    assumptions: meta?.assumptions ?? {},
+    businessType: data.businessType,
+    assumptions: {
+      founder_name: data.founderName,
+      business_name: data.businessName,
+      revenue_currency: data.currency,
+    },
     modelPurpose: EMPTY_MODEL_PURPOSE,
+    quickReplies: meta?.quick_replies ?? [],
     isStreaming: false,
   }
 }
@@ -44,6 +84,7 @@ function reducer(state: ConversationState, action: Action): ConversationState {
         ...state,
         messages: [...state.messages, { id: uuidv4(), role: 'user', content: action.content, timestamp: new Date() }],
         isStreaming: true,
+        quickReplies: [],
       }
     case 'START_STREAMING':
       return {
@@ -81,6 +122,7 @@ function reducer(state: ConversationState, action: Action): ConversationState {
           ...Object.fromEntries(Object.entries(meta.assumptions ?? {}).filter(([, v]) => v !== null)),
         },
         modelPurpose: newModelPurpose,
+        quickReplies: meta.quick_replies ?? [],
       }
     }
     default:
@@ -98,8 +140,12 @@ const STAGE_NAMES = [
   'Review',
 ]
 
-export function ChatInterface() {
-  const [state, dispatch] = useReducer(reducer, undefined, initialState)
+interface ChatInterfaceProps {
+  onboardingData: OnboardingData
+}
+
+export function ChatInterface({ onboardingData }: ChatInterfaceProps) {
+  const [state, dispatch] = useReducer(reducer, onboardingData, buildInitialState)
   const [isThinking, setIsThinking] = useState(false)
   const [deckContext, setDeckContext] = useState<string | null>(null)
   const [deckFileName, setDeckFileName] = useState<string | null>(null)
@@ -144,7 +190,7 @@ export function ChatInterface() {
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: history, deckContext }),
+          body: JSON.stringify({ messages: history, deckContext, onboardingData }),
           signal: abortRef.current.signal,
         })
         if (!response.ok || !response.body) throw new Error(`API error: ${response.status}`)
@@ -176,8 +222,17 @@ export function ChatInterface() {
         streamingIdRef.current = null
       }
     },
-    [state.isStreaming, state.messages, isThinking, deckContext],
+    [state.isStreaming, state.messages, isThinking, deckContext, onboardingData],
   )
+
+  const handleQuickReply = useCallback(
+    (reply: string) => {
+      sendMessage(reply)
+    },
+    [sendMessage],
+  )
+
+  const showQuickReplies = state.quickReplies.length > 0 && !state.isStreaming && !isThinking
 
   return (
     <div className="flex h-screen overflow-hidden bg-white">
@@ -222,6 +277,25 @@ export function ChatInterface() {
             streamingMessageId={streamingIdRef.current}
             isThinking={isThinking}
           />
+
+          {showQuickReplies && (
+            <div className="shrink-0 border-t border-slate-100 bg-white px-4 py-3">
+              <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                Quick reply
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {state.quickReplies.map((reply) => (
+                  <button
+                    key={reply}
+                    onClick={() => handleQuickReply(reply)}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-brand-navy hover:bg-brand-navy hover:text-white"
+                  >
+                    {reply}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <MessageInput
             ref={inputRef}
