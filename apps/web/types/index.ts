@@ -37,6 +37,14 @@ export interface ModelPurpose {
   audience: 'vc' | 'board' | 'acquirer' | 'personal' | null
 }
 
+export interface OnboardingData {
+  founderName: string
+  businessName: string
+  businessType: BusinessType
+  businessDescription: string
+  currency: string
+}
+
 export interface CapturedAssumptions {
   founder_name: string | null
   current_cash: number | null
@@ -61,6 +69,7 @@ export interface ConversationMeta {
   stage_name: string
   business_type: BusinessType
   model_purpose?: ModelPurpose
+  quick_replies?: string[]
   assumptions: Partial<CapturedAssumptions>
 }
 
@@ -71,10 +80,12 @@ export interface ConversationState {
   businessType: BusinessType
   assumptions: Partial<CapturedAssumptions>
   modelPurpose: ModelPurpose
+  quickReplies: string[]
   isStreaming: boolean
 }
 
 export interface ChatApiRequest {
   messages: Array<{ role: MessageRole; content: string }>
   deckContext?: string
+  onboardingData?: OnboardingData
 }
