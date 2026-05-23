@@ -10,9 +10,9 @@ const config: Config = {
     extend: {
       colors: {
         brand: {
-          navy: '#2E1065',
-          blue: '#7C3AED',
-          light: '#EDE9FE',
+          navy: '#1E1B3A',
+          blue: '#6D5BD0',
+          light: '#EEEDF8',
         },
       },
       fontFamily: {
