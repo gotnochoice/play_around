@@ -6,7 +6,18 @@ export const runtime = 'nodejs'
 
 export async function POST(req: Request) {
   try {
-    const { messages }: ChatApiRequest = await req.json()
+    const { messages, deckContext, onboardingData }: ChatApiRequest & { deckContext?: string } = await req.json()
+
+    let systemPrompt = DECK_SYSTEM_PROMPT
+
+    if (onboardingData) {
+      systemPrompt +=
+        `\n\n---\nPRE-LOADED FROM ONBOARDING:\nFounder name: ${onboardingData.founderName}\nBusiness name: ${onboardingData.businessName}\nBusiness type: ${onboardingData.businessType}\nBusiness model: ${onboardingData.businessDescription || 'not provided'}\nRevenue currency: ${onboardingData.currency}\n\nDo NOT ask for any of this information again. Start with Stage 0 (model purpose).`
+    }
+
+    if (deckContext) {
+      systemPrompt += `\n\n---\nThe founder has uploaded their pitch deck. Use it as background context:\n\n${deckContext.slice(0, 8000)}`
+    }
 
     if (!messages || messages.length === 0) {
       return new Response('Messages are required', { status: 400 })
@@ -15,7 +26,7 @@ export async function POST(req: Request) {
     const stream = getAnthropicClient().messages.stream({
       model: MODEL,
       max_tokens: MAX_TOKENS,
-      system: DECK_SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: messages.map((m) => ({
         role: m.role,
         content: m.content,
@@ -53,11 +64,9 @@ export async function POST(req: Request) {
     })
   } catch (error) {
     console.error('Chat API error:', error)
-
     if (error instanceof Error && error.message.includes('API_KEY')) {
       return new Response('Anthropic API key not configured', { status: 500 })
     }
-
     return new Response('Internal server error', { status: 500 })
   }
 }
