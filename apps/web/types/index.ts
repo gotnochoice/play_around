@@ -61,6 +61,15 @@ export interface CapturedAssumptions {
   revenue_currency: string | null
   cost_currency: string | null
   is_multi_currency: boolean | null
+  loans: number | null
+  paid_in_capital: number | null
+  days_receivable: number | null
+  days_payable: number | null
+  fixed_assets: number | null
+  capex_monthly: number | null
+  tax_rate: number | null
+  depreciation_monthly: number | null
+  inventory_value: number | null
   [key: string]: unknown
 }
 
@@ -74,6 +83,7 @@ export interface ConversationMeta {
 }
 
 export interface ConversationState {
+  sessionId: string
   messages: Message[]
   currentStage: StageId
   completedStages: StageId[]
