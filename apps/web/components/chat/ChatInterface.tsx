@@ -38,6 +38,7 @@ const BUSINESS_TYPE_MAP: Record<string, string> = {
 }
 
 function buildInitialGreeting(data: OnboardingData): string {
+  const typeLabel = data.businessType ? (BUSINESS_TYPE_MAP[data.businessType] ?? data.businessType) : 'business'
   const meta = {
     stage: 0,
     stage_name: 'Model Purpose',
@@ -62,6 +63,7 @@ function buildInitialState(data: OnboardingData): ConversationState {
   const greeting = buildInitialGreeting(data)
   const { meta } = parseMetaBlock(greeting)
   return {
+    sessionId: uuidv4(),
     messages: [{ id: greetingId, role: 'assistant', content: greeting, timestamp: new Date() }],
     currentStage: 0,
     completedStages: [],
@@ -232,7 +234,44 @@ export function ChatInterface({ onboardingData }: ChatInterfaceProps) {
     [sendMessage],
   )
 
-  const showQuickReplies = state.quickReplies.length > 0 && !state.isStreaming && !isThinking
+  useEffect(() => {
+    if (state.messages.length < 2) return
+    fetch('/api/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId: state.sessionId,
+        startedAt: state.messages[0]?.timestamp,
+        completedAt: new Date().toISOString(),
+        businessType: state.businessType,
+        businessName: state.assumptions.business_name ?? null,
+        founderName: state.assumptions.founder_name ?? null,
+        currency: state.assumptions.revenue_currency ?? null,
+        stageReached: state.currentStage,
+        completed: state.currentStage === 6,
+        assumptions: state.assumptions,
+        messages: state.messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp,
+        })),
+      }),
+    }).catch(() => {})
+  }, [state.currentStage]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleFeedback = useCallback(
+    (messageIndex: number, feedback: 'up' | 'down') => {
+      fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: state.sessionId, messageIndex, feedback }),
+      }).catch(() => {})
+    },
+    [state.sessionId],
+  )
+
+  const showQuickReplies =
+    state.quickReplies.length > 0 && !state.isStreaming && !isThinking
 
   return (
     <div className="flex h-screen overflow-hidden bg-white">
@@ -276,6 +315,7 @@ export function ChatInterface({ onboardingData }: ChatInterfaceProps) {
             isStreaming={state.isStreaming}
             streamingMessageId={streamingIdRef.current}
             isThinking={isThinking}
+            onFeedback={handleFeedback}
           />
 
           {showQuickReplies && (
