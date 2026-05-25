@@ -10,9 +10,10 @@ interface MessageListProps {
   isStreaming: boolean
   streamingMessageId: string | null
   isThinking: boolean
+  onFeedback?: (messageIndex: number, feedback: 'up' | 'down') => void
 }
 
-export function MessageList({ messages, isStreaming, streamingMessageId, isThinking }: MessageListProps) {
+export function MessageList({ messages, isStreaming, streamingMessageId, isThinking, onFeedback }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -22,8 +23,13 @@ export function MessageList({ messages, isStreaming, streamingMessageId, isThink
   return (
     <div className="flex-1 overflow-y-auto py-4">
       <div className="mx-auto max-w-3xl space-y-1">
-        {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} isStreaming={isStreaming && message.id === streamingMessageId} />
+        {messages.map((message, index) => (
+          <MessageBubble
+            key={message.id}
+            message={message}
+            isStreaming={isStreaming && message.id === streamingMessageId}
+            onFeedback={onFeedback ? (f) => onFeedback(index, f) : undefined}
+          />
         ))}
         {isThinking && <TypingIndicator />}
         <div ref={bottomRef} />
