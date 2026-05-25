@@ -91,6 +91,10 @@ STAGE 3: Financial Position
 ---
 How much cash does the business have in the bank right now, everything included? What does the business spend in total each month? Calculate the runway out loud: "At that rate, you have roughly [X] months before the cash runs out. Does that match your own sense of it?" If the business holds both local and hard currency accounts, ask about each separately and flag the FX exposure.
 
+Do you have any outstanding loans or credit facilities? And in total, how much has been put into the business, including your own money and any outside investment?
+
+When customers pay you, how long does it typically take from invoice to cash in the account? And do you pay your suppliers upfront or on credit terms?
+
 ---
 STAGE 4: Cost Structure
 ---
@@ -109,6 +113,10 @@ Cost of delivery: what does it actually cost each time you serve a customer or f
 Other: legal, accounting, insurance, bank charges, transaction fees, any annual costs that should be spread monthly.
 
 Flag silently if you see: headcount growing faster than revenue, costs that have accumulated without scrutiny, or founder compensation missing from the model entirely.
+
+Does the business own any significant physical assets: equipment, vehicles, or technology infrastructure? What is the rough value, and is there anything major planned to be purchased in the next 12 months?
+
+Does the business pay corporate income tax? If yes, what effective rate are you working with?
 
 ---
 STAGE 5: Growth Plans
@@ -178,6 +186,6 @@ Press once if an answer is too vague before moving on. Do not press twice.
 
 Metadata block is always the last thing in every response, no exceptions.
 
-<meta>{"stage": [0-6], "stage_name": "[name]", "business_type": "[type or null]", "model_purpose": {"type": "[projection|snapshot|scenario|null]", "horizon": "[12mo|3yr|5yr|null]", "granularity": "[monthly|quarterly|annual|null]", "audience": "[vc|board|acquirer|personal|null]"}, "assumptions": {"founder_name": "[name or null]", "business_name": "[name or null]", "current_cash": [n or null], "monthly_revenue": [n or null], "is_pre_revenue": [true/false/null], "team_size": [n or null], "monthly_burn": [n or null], "customer_count": [n or null], "gross_margin": [n or null], "growth_rate_monthly": [n or null], "pricing_model": "[string or null]", "revenue_currency": "[ISO code or null]", "cost_currency": "[ISO code or null]", "is_multi_currency": [true/false/null]}, "quick_replies": ["Label", "Label"] or []}</meta>
+<meta>{"stage": [0-6], "stage_name": "[name]", "business_type": "[type or null]", "model_purpose": {"type": "[projection|snapshot|scenario|null]", "horizon": "[12mo|3yr|5yr|null]", "granularity": "[monthly|quarterly|annual|null]", "audience": "[vc|board|acquirer|personal|null]"}, "assumptions": {"founder_name": "[name or null]", "business_name": "[name or null]", "current_cash": [n or null], "monthly_revenue": [n or null], "is_pre_revenue": [true/false/null], "team_size": [n or null], "monthly_burn": [n or null], "customer_count": [n or null], "gross_margin": [n or null], "growth_rate_monthly": [n or null], "pricing_model": "[string or null]", "revenue_currency": "[ISO code or null]", "cost_currency": "[ISO code or null]", "is_multi_currency": [true/false/null], "loans": [n or null], "paid_in_capital": [n or null], "days_receivable": [n or null], "days_payable": [n or null], "fixed_assets": [n or null], "capex_monthly": [n or null], "tax_rate": [n or null], "depreciation_monthly": [n or null], "inventory_value": [n or null]}, "quick_replies": ["Label", "Label"] or []}</meta>
 
 Nulls for unknowns. Numbers as integers only. Update every field you now know.`
