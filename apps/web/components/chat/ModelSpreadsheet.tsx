@@ -204,6 +204,7 @@ interface FullProjection {
 
 interface FullModelParams {
   monthlyRevenue: number | null
+  monthlyCOGS: number | null
   growthRate: number | null
   monthlyBurn: number | null
   grossMargin: number | null
@@ -226,12 +227,17 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
   if (!p.monthlyRevenue) return null
 
   const growth = (p.growthRate ?? 0) / 100
-  const margin = (p.grossMargin ?? 60) / 100
+  // cogsMargin: derived from actual COGS figure when available, else from gross_margin %
+  // gross_margin from the AI represents the GROSS margin (after direct delivery costs only)
+  const grossMarginPct = p.grossMargin ?? 40
+  const cogsMargin = p.monthlyCOGS != null && p.monthlyRevenue != null && p.monthlyRevenue > 0
+    ? p.monthlyCOGS / p.monthlyRevenue
+    : 1 - grossMarginPct / 100
   const burn = p.monthlyBurn ?? p.monthlyRevenue * 1.5
   const taxPct = (p.taxRate ?? 0) / 100
   const monthlyInterest = 0.15 / 12
   const capex = p.capexMonthly ?? 0
-  const usefulLife = 60 // months (5 years)
+  const usefulLife = 60
   const depMonthly = p.depreciation != null
     ? p.depreciation
     : p.fixedAssets ? p.fixedAssets / usefulLife : 0
@@ -244,7 +250,8 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
     const total = p.horizon === '5yr' ? 60 : p.horizon === '3yr' ? 36 : 12
     for (let q = 1; q <= total / 3; q++) periods.push({ label: `Q${q}`, months: 3 })
   } else {
-    for (let m = 1; m <= 12; m++) periods.push({ label: `M${m}`, months: 1 })
+    const totalMonths = p.horizon === '5yr' ? 60 : p.horizon === '3yr' ? 36 : 12
+    for (let m = 1; m <= totalMonths; m++) periods.push({ label: `M${m}`, months: 1 })
   }
 
   // Opening balance sheet — derive retained earnings to balance at open
@@ -277,9 +284,9 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
       if (m === months - 1) lastMonthRev = mRev
     }
     const totalCost = burn * months
-    const cogs = revenue * (1 - margin)
-    const grossProfit = revenue * margin
-    const grossMarginPct = margin * 100
+    const cogs = revenue * cogsMargin
+    const grossProfit = revenue * (1 - cogsMargin)
+    const grossMarginPct = (1 - cogsMargin) * 100
     const totalOpex = Math.max(0, totalCost - cogs)
     const salaries = totalOpex * 0.55
     const marketing = totalOpex * 0.25
@@ -296,7 +303,7 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
     const arDays = p.daysReceivable ?? 0
     const apDays = p.daysPayable ?? 0
     const ar = lastMonthRev * (arDays / 30)
-    const ap = lastMonthRev * (1 - margin) * (apDays / 30)
+    const ap = lastMonthRev * cogsMargin * (apDays / 30)
 
     // Cash Flow
     const cfARChange = -(ar - prevAR)
@@ -612,13 +619,15 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
       : null
 
   const cogs =
-    assumptions.monthly_revenue != null && assumptions.gross_margin != null
-      ? assumptions.monthly_revenue * (1 - assumptions.gross_margin / 100)
-      : null
+    assumptions.monthly_cogs != null
+      ? assumptions.monthly_cogs
+      : assumptions.monthly_revenue != null && assumptions.gross_margin != null
+        ? assumptions.monthly_revenue * (1 - assumptions.gross_margin / 100)
+        : null
 
   const grossProfit =
-    assumptions.monthly_revenue != null && assumptions.gross_margin != null
-      ? assumptions.monthly_revenue * (assumptions.gross_margin / 100)
+    assumptions.monthly_revenue != null && cogs != null
+      ? assumptions.monthly_revenue - cogs
       : null
 
   const opex =
@@ -633,9 +642,14 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
       ? Math.round(assumptions.monthly_revenue / assumptions.team_size)
       : null
 
+  const displayGrossMargin = assumptions.monthly_revenue != null && cogs != null && assumptions.monthly_revenue > 0
+    ? Math.round(((assumptions.monthly_revenue - cogs) / assumptions.monthly_revenue) * 100)
+    : assumptions.gross_margin ?? null
+
   // Build full 3-statement model
   const projections = buildFullModel({
     monthlyRevenue: assumptions.monthly_revenue ?? null,
+    monthlyCOGS: assumptions.monthly_cogs ?? null,
     growthRate: assumptions.growth_rate_monthly ?? null,
     monthlyBurn: assumptions.monthly_burn ?? null,
     grossMargin: assumptions.gross_margin ?? null,
@@ -665,7 +679,7 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
         },
         { label: 'Cost of Goods (COGS)', value: fmt(cogs), indent: true },
         { label: 'Gross Profit', value: fmt(grossProfit) },
-        { label: 'Gross Margin', value: assumptions.gross_margin != null ? `${assumptions.gross_margin}%` : null },
+        { label: 'Gross Margin', value: displayGrossMargin != null ? `${displayGrossMargin}%` : null },
         { label: 'Operating Costs', value: fmt(opex), indent: true },
         {
           label: 'Operating Profit',
@@ -718,7 +732,7 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
         { label: 'Cost Currency', value: assumptions.cost_currency ?? null },
         { label: 'Multi-currency', value: assumptions.is_multi_currency != null ? (assumptions.is_multi_currency ? 'Yes' : 'No') : null },
         { label: 'Monthly Growth Rate', value: assumptions.growth_rate_monthly != null ? `${assumptions.growth_rate_monthly}% / month` : null },
-        { label: 'Gross Margin Target', value: assumptions.gross_margin != null ? `${assumptions.gross_margin}%` : null },
+        { label: 'Gross Margin Target', value: displayGrossMargin != null ? `${displayGrossMargin}%` : null },
         { label: 'Pricing Model', value: assumptions.pricing_model ?? null },
         { label: 'Customer Count', value: assumptions.customer_count != null ? assumptions.customer_count.toLocaleString() : null },
       ],
@@ -726,9 +740,10 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
     {
       title: 'Cost Assumptions',
       rows: [
-        { label: 'Monthly Burn', value: fmt(assumptions.monthly_burn) },
+        { label: 'Monthly Burn (Total)', value: fmt(assumptions.monthly_burn) },
+        { label: 'Monthly COGS', value: fmt(cogs) },
+        { label: 'Monthly OPEX', value: fmt(opex) },
         { label: 'Team Size', value: assumptions.team_size != null ? `${assumptions.team_size} people` : null },
-        { label: 'COGS (monthly)', value: fmt(cogs) },
       ],
     },
     {
