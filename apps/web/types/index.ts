@@ -70,6 +70,7 @@ export interface CapturedAssumptions {
   tax_rate: number | null
   depreciation_monthly: number | null
   inventory_value: number | null
+  monthly_cogs: number | null
   [key: string]: unknown
 }
 
