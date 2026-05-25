@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { cn, formatCurrency, formatCurrencyCompact } from '@/lib/utils'
-import type { ConversationState, StageId } from '@/types'
+import type { ConversationState } from '@/types'
+
+// ───── CONSTANTS ──────────────────────────────────────────────────────────────
 
 const BUSINESS_TYPE_LABELS: Record<string, string> = {
   B2B_SAAS: 'B2B SaaS',
@@ -54,6 +56,8 @@ function convertAmount(amount: number, from: string, to: string): number {
   return amount * (usdRate / toRate)
 }
 
+// ───── TYPES ──────────────────────────────────────────────────────────────────
+
 interface Row {
   label: string
   value: string | null
@@ -61,18 +65,23 @@ interface Row {
   indent?: boolean
 }
 
-type TabId = 'actual' | 'assumptions' | 'model'
+type TabId = 'actual' | 'assumptions' | 'pl' | 'bs' | 'cf' | 'ratios'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'actual', label: 'Actual' },
   { id: 'assumptions', label: 'Assumptions' },
-  { id: 'model', label: 'Financial Model' },
+  { id: 'pl', label: 'P&L' },
+  { id: 'bs', label: 'Balance Sheet' },
+  { id: 'cf', label: 'Cash Flow' },
+  { id: 'ratios', label: 'Ratios' },
 ]
 
 const STAGE_TAB: Record<number, TabId> = {
   0: 'actual', 1: 'actual', 2: 'actual', 3: 'actual', 4: 'actual',
-  5: 'assumptions', 6: 'model',
+  5: 'assumptions', 6: 'pl',
 }
+
+// ───── SIMPLE LAYOUT COMPONENTS ───────────────────────────────────────────────
 
 function Cell({ value, status, className }: { value: string | null; status?: Row['status']; className?: string }) {
   return (
@@ -129,95 +138,451 @@ function PadRow({ rowNum, even }: { rowNum: number; even: boolean }) {
   )
 }
 
-function ModelRow({ rowNum, period, revenue, grossProfit, netPL, cash, even, isHeader }: {
-  rowNum: number | string; period: string
-  revenue: string | null; grossProfit: string | null; netPL: string | null; cash: string | null
-  even: boolean; isHeader?: boolean
-}) {
-  const isLoss = typeof netPL === 'string' && netPL.startsWith('-')
-  const isCashNeg = typeof cash === 'string' && cash.startsWith('-')
+// ───── 3-STATEMENT MODEL: TYPES ───────────────────────────────────────────────
 
-  return (
-    <div className={cn(
-      'flex items-center border-b border-slate-100 text-xs',
-      isHeader ? 'bg-slate-100 font-semibold text-slate-500' : even ? 'bg-white' : 'bg-slate-50/40',
-    )}>
-      <div className="w-8 shrink-0 border-r border-slate-100 py-2 text-center text-[10px] text-slate-300 select-none">{rowNum}</div>
-      <div className={cn('w-20 shrink-0 border-r border-slate-100 px-2 py-2 select-none', isHeader ? 'text-slate-500' : 'font-medium text-slate-600')}>{period}</div>
-      <div className="flex-1 border-r border-slate-100 px-2 py-2 text-right font-medium text-slate-800">{revenue ?? '—'}</div>
-      <div className="flex-1 border-r border-slate-100 px-2 py-2 text-right font-medium text-slate-800">{grossProfit ?? '—'}</div>
-      <div className={cn('flex-1 border-r border-slate-100 px-2 py-2 text-right font-medium', isHeader ? '' : isLoss ? 'text-red-500' : 'text-emerald-600')}>{netPL ?? '—'}</div>
-      <div className={cn('flex-1 px-2 py-2 text-right font-medium', isHeader ? '' : isCashNeg ? 'text-red-500' : 'text-slate-800')}>{cash ?? '—'}</div>
-    </div>
-  )
-}
-
-interface ProjectionPeriod {
+interface FullProjection {
   label: string
-  revenue: string
-  grossProfit: string
-  netPL: string
-  cash: string
+  months: number
+  // P&L / SOPL
+  revenue: number
+  cogs: number
+  grossProfit: number
+  grossMarginPct: number
+  salaries: number
+  marketing: number
+  ga: number
+  totalOpex: number
+  ebitda: number
+  depreciationAmt: number
+  ebit: number
+  interestExpense: number
+  ebt: number
+  tax: number
+  netProfit: number
+  // Balance Sheet / SOFP
+  grossFixedAssets: number
+  accumulatedDepreciation: number
+  netFixedAssets: number
+  cashBalance: number
+  accountsReceivable: number
+  inventoryValue: number
+  totalCurrentAssets: number
+  totalAssets: number
+  paidInCapital: number
+  retainedEarnings: number
+  totalEquity: number
+  loansBalance: number
+  accountsPayable: number
+  totalCurrentLiabilities: number
+  totalLiabilities: number
+  totalEquityAndLiabilities: number
+  balanceCheck: number
+  // Cash Flow
+  cfNetProfit: number
+  cfDepreciation: number
+  cfARChange: number
+  cfAPChange: number
+  cfOperating: number
+  cfCapex: number
+  cfInvesting: number
+  cfLoanChange: number
+  cfEquityChange: number
+  cfFinancing: number
+  netCashMovement: number
+  openingCash: number
+  closingCash: number
+  // Ratios
+  currentRatio: number | null
+  quickRatio: number | null
+  ebitdaMarginPct: number
+  netMarginPct: number
+  revenuePerEmployee: number | null
+  burnMultiple: number | null
+  arDays: number | null
+  revenueGrowthPct: number | null
 }
 
-function buildProjections(
-  monthlyRevenue: number | null,
-  growthRate: number | null,
-  monthlyBurn: number | null,
-  grossMargin: number | null,
-  currentCash: number | null,
-  horizon: string | null,
-  granularity: string | null,
-  revCurrency: string,
-  displayCurrency: string,
-): ProjectionPeriod[] | null {
-  if (!monthlyRevenue) return null
+interface FullModelParams {
+  monthlyRevenue: number | null
+  growthRate: number | null
+  monthlyBurn: number | null
+  grossMargin: number | null
+  currentCash: number | null
+  horizon: string | null
+  granularity: string | null
+  loans: number | null
+  paidInCapital: number | null
+  daysReceivable: number | null
+  daysPayable: number | null
+  fixedAssets: number | null
+  capexMonthly: number | null
+  taxRate: number | null
+  depreciation: number | null
+  teamSize: number | null
+  inventoryValue: number | null
+}
 
-  const growth = (growthRate ?? 0) / 100
-  const margin = (grossMargin ?? 60) / 100
-  const burn = monthlyBurn ?? monthlyRevenue * 1.5
+function buildFullModel(p: FullModelParams): FullProjection[] | null {
+  if (!p.monthlyRevenue) return null
 
-  let periods: { label: string; months: number }[] = []
+  const growth = (p.growthRate ?? 0) / 100
+  const margin = (p.grossMargin ?? 60) / 100
+  const burn = p.monthlyBurn ?? p.monthlyRevenue * 1.5
+  const taxPct = (p.taxRate ?? 0) / 100
+  const monthlyInterest = 0.15 / 12
+  const capex = p.capexMonthly ?? 0
+  const usefulLife = 60 // months (5 years)
+  const depMonthly = p.depreciation != null
+    ? p.depreciation
+    : p.fixedAssets ? p.fixedAssets / usefulLife : 0
 
-  if (granularity === 'annual') {
-    const years = horizon === '5yr' ? 5 : horizon === '3yr' ? 3 : 1
-    for (let y = 1; y <= years; y++) periods.push({ label: `Year ${y}`, months: 12 })
-  } else if (granularity === 'quarterly') {
-    const totalMonths = horizon === '5yr' ? 60 : horizon === '3yr' ? 36 : 12
-    for (let q = 1; q <= totalMonths / 3; q++) periods.push({ label: `Q${q}`, months: 3 })
+  const periods: { label: string; months: number }[] = []
+  if (p.granularity === 'annual') {
+    const yrs = p.horizon === '5yr' ? 5 : p.horizon === '3yr' ? 3 : 1
+    for (let y = 1; y <= yrs; y++) periods.push({ label: `Year ${y}`, months: 12 })
+  } else if (p.granularity === 'quarterly') {
+    const total = p.horizon === '5yr' ? 60 : p.horizon === '3yr' ? 36 : 12
+    for (let q = 1; q <= total / 3; q++) periods.push({ label: `Q${q}`, months: 3 })
   } else {
     for (let m = 1; m <= 12; m++) periods.push({ label: `M${m}`, months: 1 })
   }
 
-  let cumulativeMonth = 0
-  let cashBalance = currentCash ?? 0
+  // Opening balance sheet — derive retained earnings to balance at open
+  const openingCash = p.currentCash ?? 0
+  const openingFA = p.fixedAssets ?? 0
+  const openingInv = p.inventoryValue ?? 0
+  const openingLoans = p.loans ?? 0
+  const openingPIC = p.paidInCapital ?? 0
+  const openingRE = openingCash + openingFA + openingInv - openingLoans - openingPIC
 
-  const fmt = (n: number) =>
-    formatCurrencyCompact(convertAmount(n, revCurrency, displayCurrency), displayCurrency)
+  let cashBalance = openingCash
+  let grossFA = openingFA
+  let accumDep = 0
+  let retainedEarnings = openingRE
+  let cumulativeMonth = 0
+  let prevAR = 0
+  let prevAP = 0
+  let prevRevenue: number | null = null
 
   return periods.map(({ label, months }) => {
-    let periodRevenue = 0
-    let periodCost = 0
+    const periodOpeningCash = cashBalance
 
+    // P&L
+    let revenue = 0
+    let lastMonthRev = 0
     for (let m = 0; m < months; m++) {
-      periodRevenue += monthlyRevenue * Math.pow(1 + growth, cumulativeMonth)
-      periodCost += burn
+      const mRev = p.monthlyRevenue! * Math.pow(1 + growth, cumulativeMonth)
+      revenue += mRev
       cumulativeMonth++
+      if (m === months - 1) lastMonthRev = mRev
     }
+    const totalCost = burn * months
+    const cogs = revenue * (1 - margin)
+    const grossProfit = revenue * margin
+    const grossMarginPct = margin * 100
+    const totalOpex = Math.max(0, totalCost - cogs)
+    const salaries = totalOpex * 0.55
+    const marketing = totalOpex * 0.25
+    const ga = totalOpex * 0.20
+    const ebitda = grossProfit - totalOpex
+    const depAmt = depMonthly * months
+    const ebit = ebitda - depAmt
+    const interest = openingLoans * monthlyInterest * months
+    const ebt = ebit - interest
+    const taxAmt = Math.max(0, ebt * taxPct)
+    const netProfit = ebt - taxAmt
 
-    const grossProfit = periodRevenue * margin
-    const netPL = periodRevenue - periodCost
-    cashBalance += netPL
+    // Working capital
+    const arDays = p.daysReceivable ?? 0
+    const apDays = p.daysPayable ?? 0
+    const ar = lastMonthRev * (arDays / 30)
+    const ap = lastMonthRev * (1 - margin) * (apDays / 30)
+
+    // Cash Flow
+    const cfARChange = -(ar - prevAR)
+    const cfAPChange = ap - prevAP
+    const cfOperating = netProfit + depAmt + cfARChange + cfAPChange
+    const cfCapex = -(capex * months)
+    const cfInvesting = cfCapex
+    const cfFinancing = 0
+    const netCashMovement = cfOperating + cfInvesting + cfFinancing
+    cashBalance = periodOpeningCash + netCashMovement
+    const closingCash = cashBalance
+
+    // Balance Sheet
+    grossFA += capex * months
+    accumDep += depAmt
+    const netFA = Math.max(0, grossFA - accumDep)
+    retainedEarnings += netProfit
+
+    const tca = closingCash + ar + openingInv
+    const totalAssets = netFA + tca
+    const totalEquity = openingPIC + retainedEarnings
+    const tcl = ap
+    const totalLiabilities = openingLoans + tcl
+    const totalEL = totalEquity + totalLiabilities
+    const balanceCheck = totalAssets - totalEL
+
+    // Ratios
+    const currentRatio = tcl > 0 ? tca / tcl : null
+    const quickRatio = tcl > 0 ? (tca - openingInv) / tcl : null
+    const ebitdaMarginPct = revenue > 0 ? (ebitda / revenue) * 100 : 0
+    const netMarginPct = revenue > 0 ? (netProfit / revenue) * 100 : 0
+    const revPerEmp = p.teamSize && p.teamSize > 0 ? revenue / (p.teamSize * months) : null
+    const netBurn = Math.max(0, totalCost - revenue)
+    const revGrowth = prevRevenue != null ? revenue - prevRevenue : null
+    const burnMultiple = revGrowth != null && revGrowth > 0 ? netBurn / revGrowth : null
+    const revenueGrowthPct = prevRevenue != null && prevRevenue > 0
+      ? ((revenue - prevRevenue) / prevRevenue) * 100
+      : null
+
+    prevAR = ar
+    prevAP = ap
+    prevRevenue = revenue
 
     return {
-      label,
-      revenue: fmt(periodRevenue),
-      grossProfit: fmt(grossProfit),
-      netPL: netPL < 0 ? `-${fmt(Math.abs(netPL))}` : fmt(netPL),
-      cash: cashBalance < 0 ? `-${fmt(Math.abs(cashBalance))}` : fmt(cashBalance),
+      label, months,
+      revenue, cogs, grossProfit, grossMarginPct, salaries, marketing, ga, totalOpex,
+      ebitda, depreciationAmt: depAmt, ebit, interestExpense: interest, ebt, tax: taxAmt, netProfit,
+      grossFixedAssets: grossFA, accumulatedDepreciation: accumDep, netFixedAssets: netFA,
+      cashBalance: closingCash, accountsReceivable: ar, inventoryValue: openingInv,
+      totalCurrentAssets: tca, totalAssets,
+      paidInCapital: openingPIC, retainedEarnings, totalEquity,
+      loansBalance: openingLoans, accountsPayable: ap,
+      totalCurrentLiabilities: tcl, totalLiabilities, totalEquityAndLiabilities: totalEL,
+      balanceCheck,
+      cfNetProfit: netProfit, cfDepreciation: depAmt, cfARChange, cfAPChange, cfOperating,
+      cfCapex, cfInvesting, cfLoanChange: 0, cfEquityChange: 0, cfFinancing,
+      netCashMovement, openingCash: periodOpeningCash, closingCash,
+      currentRatio, quickRatio, ebitdaMarginPct, netMarginPct,
+      revenuePerEmployee: revPerEmp, burnMultiple, arDays: arDays || null,
+      revenueGrowthPct,
     }
   })
 }
+
+// ───── ROW DEFINITIONS ────────────────────────────────────────────────────────
+
+type CellFormat = 'currency' | 'percent' | 'ratio' | 'days' | 'number' | 'balanceCheck'
+type CellColor = 'red' | 'green' | 'amber' | 'neutral'
+
+interface StatementRowDef {
+  key: keyof FullProjection | 'SECTION'
+  label: string
+  isSection?: boolean
+  isTotal?: boolean
+  indent?: boolean
+  format?: CellFormat
+  colorFn?: (v: number) => CellColor
+}
+
+const PL_ROWS: StatementRowDef[] = [
+  { key: 'SECTION', label: 'INCOME STATEMENT', isSection: true },
+  { key: 'revenue', label: 'Revenue', isTotal: true },
+  { key: 'cogs', label: 'Cost of Goods Sold', indent: true },
+  { key: 'grossProfit', label: 'Gross Profit', isTotal: true },
+  { key: 'grossMarginPct', label: 'Gross Margin %', indent: true, format: 'percent' },
+  { key: 'SECTION', label: 'OPERATING EXPENSES', isSection: true },
+  { key: 'salaries', label: 'Salaries & Benefits', indent: true },
+  { key: 'marketing', label: 'Marketing & Sales', indent: true },
+  { key: 'ga', label: 'General & Admin', indent: true },
+  { key: 'totalOpex', label: 'Total OPEX', isTotal: true },
+  { key: 'SECTION', label: 'PROFITABILITY', isSection: true },
+  { key: 'ebitda', label: 'EBITDA', isTotal: true, colorFn: (v) => v >= 0 ? 'green' : 'red' },
+  { key: 'depreciationAmt', label: 'Depreciation & Amortisation', indent: true },
+  { key: 'ebit', label: 'EBIT (Operating Profit)', isTotal: true, colorFn: (v) => v >= 0 ? 'green' : 'red' },
+  { key: 'interestExpense', label: 'Interest Expense', indent: true },
+  { key: 'ebt', label: 'Earnings Before Tax', isTotal: true },
+  { key: 'tax', label: 'Income Tax', indent: true },
+  { key: 'netProfit', label: 'Net Profit / PAT', isTotal: true, colorFn: (v) => v >= 0 ? 'green' : 'red' },
+]
+
+const BS_ROWS: StatementRowDef[] = [
+  { key: 'SECTION', label: 'NON-CURRENT ASSETS', isSection: true },
+  { key: 'grossFixedAssets', label: 'Fixed Assets (Gross)', indent: true },
+  { key: 'accumulatedDepreciation', label: 'Less: Accumulated Depreciation', indent: true },
+  { key: 'netFixedAssets', label: 'Net Fixed Assets', isTotal: true },
+  { key: 'SECTION', label: 'CURRENT ASSETS', isSection: true },
+  { key: 'cashBalance', label: 'Cash & Cash Equivalents', indent: true },
+  { key: 'accountsReceivable', label: 'Accounts Receivable', indent: true },
+  { key: 'inventoryValue', label: 'Inventory', indent: true },
+  { key: 'totalCurrentAssets', label: 'Total Current Assets', isTotal: true },
+  { key: 'totalAssets', label: 'TOTAL ASSETS', isTotal: true },
+  { key: 'SECTION', label: 'EQUITY', isSection: true },
+  { key: 'paidInCapital', label: 'Paid-in Capital', indent: true },
+  { key: 'retainedEarnings', label: 'Retained Earnings / (Deficit)', indent: true, colorFn: (v) => v >= 0 ? 'neutral' : 'amber' },
+  { key: 'totalEquity', label: 'Total Equity', isTotal: true },
+  { key: 'SECTION', label: 'LIABILITIES', isSection: true },
+  { key: 'loansBalance', label: 'Loans & Borrowings', indent: true },
+  { key: 'accountsPayable', label: 'Accounts Payable', indent: true },
+  { key: 'totalCurrentLiabilities', label: 'Total Current Liabilities', isTotal: true },
+  { key: 'totalLiabilities', label: 'Total Liabilities', isTotal: true },
+  { key: 'totalEquityAndLiabilities', label: 'Total Equity & Liabilities', isTotal: true },
+  { key: 'balanceCheck', label: 'Balance Check', format: 'balanceCheck', colorFn: (v) => Math.abs(v) < 1 ? 'green' : 'red' },
+]
+
+const CF_ROWS: StatementRowDef[] = [
+  { key: 'SECTION', label: 'OPERATING ACTIVITIES', isSection: true },
+  { key: 'cfNetProfit', label: 'Net Profit', indent: true },
+  { key: 'cfDepreciation', label: 'Add: Depreciation', indent: true },
+  { key: 'cfARChange', label: 'Change in Receivables', indent: true, colorFn: (v) => v >= 0 ? 'green' : 'amber' },
+  { key: 'cfAPChange', label: 'Change in Payables', indent: true, colorFn: (v) => v >= 0 ? 'green' : 'amber' },
+  { key: 'cfOperating', label: 'Net Operating Cash Flow', isTotal: true, colorFn: (v) => v >= 0 ? 'green' : 'red' },
+  { key: 'SECTION', label: 'INVESTING ACTIVITIES', isSection: true },
+  { key: 'cfCapex', label: 'Capital Expenditure', indent: true },
+  { key: 'cfInvesting', label: 'Net Investing Cash Flow', isTotal: true, colorFn: (v) => v >= 0 ? 'neutral' : 'amber' },
+  { key: 'SECTION', label: 'FINANCING ACTIVITIES', isSection: true },
+  { key: 'cfLoanChange', label: 'Loan Proceeds / (Repayments)', indent: true },
+  { key: 'cfEquityChange', label: 'Equity Raised', indent: true },
+  { key: 'cfFinancing', label: 'Net Financing Cash Flow', isTotal: true },
+  { key: 'SECTION', label: 'CASH MOVEMENT', isSection: true },
+  { key: 'netCashMovement', label: 'Net Change in Cash', isTotal: true, colorFn: (v) => v >= 0 ? 'green' : 'red' },
+  { key: 'openingCash', label: 'Opening Cash Balance', indent: true },
+  { key: 'closingCash', label: 'Closing Cash Balance', isTotal: true, colorFn: (v) => v >= 0 ? 'neutral' : 'red' },
+]
+
+const RATIO_ROWS: StatementRowDef[] = [
+  { key: 'SECTION', label: 'LIQUIDITY', isSection: true },
+  { key: 'currentRatio', label: 'Current Ratio', format: 'ratio', colorFn: (v) => v >= 1.5 ? 'green' : v >= 1 ? 'amber' : 'red' },
+  { key: 'quickRatio', label: 'Quick Ratio', format: 'ratio', colorFn: (v) => v >= 1 ? 'green' : v >= 0.5 ? 'amber' : 'red' },
+  { key: 'SECTION', label: 'PROFITABILITY', isSection: true },
+  { key: 'grossMarginPct', label: 'Gross Margin', format: 'percent', colorFn: (v) => v >= 50 ? 'green' : v >= 25 ? 'amber' : 'red' },
+  { key: 'ebitdaMarginPct', label: 'EBITDA Margin', format: 'percent', colorFn: (v) => v >= 15 ? 'green' : v >= 0 ? 'amber' : 'red' },
+  { key: 'netMarginPct', label: 'Net Profit Margin', format: 'percent', colorFn: (v) => v >= 10 ? 'green' : v >= 0 ? 'amber' : 'red' },
+  { key: 'SECTION', label: 'EFFICIENCY', isSection: true },
+  { key: 'revenuePerEmployee', label: 'Revenue / Employee (monthly)', colorFn: () => 'neutral' },
+  { key: 'burnMultiple', label: 'Burn Multiple', format: 'ratio', colorFn: (v) => v <= 1 ? 'green' : v <= 2 ? 'amber' : 'red' },
+  { key: 'arDays', label: 'AR Days (collect)', format: 'days' },
+  { key: 'SECTION', label: 'GROWTH', isSection: true },
+  { key: 'revenueGrowthPct', label: 'Revenue Growth', format: 'percent', colorFn: (v) => v > 0 ? 'green' : v === 0 ? 'amber' : 'red' },
+  { key: 'revenue', label: 'Revenue (Period)', isTotal: true },
+  { key: 'netProfit', label: 'Net Profit (Period)', isTotal: true, colorFn: (v) => v >= 0 ? 'green' : 'red' },
+]
+
+// ───── CELL FORMATTER ─────────────────────────────────────────────────────────
+
+function formatCell(
+  rawVal: number | null | undefined,
+  row: StatementRowDef,
+  nativeCurrency: string,
+  displayCurrency: string,
+): string {
+  if (rawVal === null || rawVal === undefined) return '—'
+  switch (row.format) {
+    case 'percent': return `${rawVal.toFixed(1)}%`
+    case 'ratio': return `${rawVal.toFixed(2)}x`
+    case 'days': return `${Math.round(rawVal)}d`
+    case 'number': return rawVal.toLocaleString()
+    case 'balanceCheck':
+      return Math.abs(rawVal) < 1
+        ? '✓'
+        : `Δ ${formatCurrencyCompact(convertAmount(rawVal, nativeCurrency, displayCurrency), displayCurrency)}`
+    default: {
+      const dispVal = convertAmount(rawVal, nativeCurrency, displayCurrency)
+      return formatCurrencyCompact(dispVal, displayCurrency)
+    }
+  }
+}
+
+// ───── TRANSPOSED TABLE ───────────────────────────────────────────────────────
+
+function ModelTable({
+  projections, rowDefs, nativeCurrency, displayCurrency, isFX, disclaimer,
+}: {
+  projections: FullProjection[]
+  rowDefs: StatementRowDef[]
+  nativeCurrency: string
+  displayCurrency: string
+  isFX: boolean
+  disclaimer?: string
+}) {
+  return (
+    <div className="overflow-x-auto h-full">
+      <table className="min-w-full border-collapse text-xs">
+        <thead>
+          <tr className="bg-slate-100 border-b border-slate-200">
+            <th className="sticky left-0 z-10 bg-slate-100 w-52 min-w-[208px] px-3 py-2 text-left text-[11px] font-semibold text-slate-500 border-r border-slate-200">
+              Line Item
+            </th>
+            {projections.map((proj) => (
+              <th key={proj.label} className="min-w-[90px] px-2 py-2 text-right text-[11px] font-semibold text-slate-500 border-r border-slate-200 last:border-r-0 whitespace-nowrap">
+                {proj.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rowDefs.map((row, ri) => {
+            if (row.isSection) {
+              return (
+                <tr key={`sec-${ri}`} className="bg-brand-light/60 border-b border-slate-200">
+                  <td colSpan={projections.length + 1} className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-brand-navy">
+                    {row.label}
+                  </td>
+                </tr>
+              )
+            }
+            const even = ri % 2 === 0
+            return (
+              <tr key={`${String(row.key)}-${ri}`} className={cn(
+                'border-b border-slate-100 hover:bg-brand-light/20',
+                even ? 'bg-white' : 'bg-slate-50/40',
+              )}>
+                <td className={cn(
+                  'sticky left-0 z-10 px-3 py-2 border-r border-slate-200 select-none',
+                  even ? 'bg-white' : 'bg-slate-50/40',
+                  row.indent ? 'pl-6 text-slate-500' : 'text-slate-600',
+                  row.isTotal && 'font-semibold text-slate-700',
+                )}>
+                  {row.label}
+                </td>
+                {projections.map((proj) => {
+                  const rawVal = proj[row.key as keyof FullProjection] as number | null
+                  const color = rawVal !== null && rawVal !== undefined && row.colorFn
+                    ? row.colorFn(rawVal as number)
+                    : null
+                  return (
+                    <td key={proj.label} className={cn(
+                      'px-2 py-2 text-right border-r border-slate-100 last:border-r-0 tabular-nums',
+                      row.isTotal && 'font-semibold',
+                      color === 'red' ? 'text-red-500' :
+                      color === 'green' ? 'text-emerald-600' :
+                      color === 'amber' ? 'text-amber-500' :
+                      'text-slate-700',
+                    )}>
+                      {formatCell(rawVal, row, nativeCurrency, displayCurrency)}
+                    </td>
+                  )
+                })}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      {(disclaimer || isFX) && (
+        <div className="px-4 py-2 text-[10px] text-slate-400 border-t border-slate-100">
+          {disclaimer}
+          {isFX && (
+            <span className={disclaimer ? 'ml-2 text-amber-500' : 'text-amber-500'}>
+              Figures in {displayCurrency} at indicative FX rates.
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function EmptyModel({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full text-center px-8 py-12">
+      <p className="text-sm font-medium text-slate-400">{message}</p>
+      <p className="mt-1 text-xs text-slate-300">Complete the conversation to unlock this view.</p>
+    </div>
+  )
+}
+
+// ───── MAIN COMPONENT ─────────────────────────────────────────────────────────
 
 export function ModelSpreadsheet({ state }: { state: ConversationState }) {
   const { assumptions, businessType, modelPurpose } = state
@@ -236,6 +601,7 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
   }, [assumptions.revenue_currency, nativeCurrency])
 
   const isFX = displayCurrency !== nativeCurrency
+  const isModelTab = (['pl', 'bs', 'cf', 'ratios'] as TabId[]).includes(activeTab)
 
   const fmt = (v: number | null | undefined) =>
     v != null ? formatCurrency(convertAmount(v, nativeCurrency, displayCurrency), displayCurrency) : null
@@ -243,11 +609,6 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
   const runwayMonths =
     assumptions.current_cash != null && assumptions.monthly_burn != null && assumptions.monthly_burn > 0
       ? Math.floor(assumptions.current_cash / assumptions.monthly_burn)
-      : null
-
-  const revenuePerEmployee =
-    assumptions.monthly_revenue != null && assumptions.team_size != null && assumptions.team_size > 0
-      ? Math.round(assumptions.monthly_revenue / assumptions.team_size)
       : null
 
   const cogs =
@@ -265,9 +626,35 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
       ? Math.max(0, assumptions.monthly_burn - cogs)
       : assumptions.monthly_burn ?? null
 
-  const operatingProfit =
-    grossProfit != null && opex != null ? grossProfit - opex : null
+  const operatingProfit = grossProfit != null && opex != null ? grossProfit - opex : null
 
+  const revenuePerEmployee =
+    assumptions.monthly_revenue != null && assumptions.team_size != null && assumptions.team_size > 0
+      ? Math.round(assumptions.monthly_revenue / assumptions.team_size)
+      : null
+
+  // Build full 3-statement model
+  const projections = buildFullModel({
+    monthlyRevenue: assumptions.monthly_revenue ?? null,
+    growthRate: assumptions.growth_rate_monthly ?? null,
+    monthlyBurn: assumptions.monthly_burn ?? null,
+    grossMargin: assumptions.gross_margin ?? null,
+    currentCash: assumptions.current_cash ?? null,
+    horizon: modelPurpose?.horizon ?? null,
+    granularity: modelPurpose?.granularity ?? null,
+    loans: assumptions.loans ?? null,
+    paidInCapital: assumptions.paid_in_capital ?? null,
+    daysReceivable: assumptions.days_receivable ?? null,
+    daysPayable: assumptions.days_payable ?? null,
+    fixedAssets: assumptions.fixed_assets ?? null,
+    capexMonthly: assumptions.capex_monthly ?? null,
+    taxRate: assumptions.tax_rate ?? null,
+    depreciation: assumptions.depreciation_monthly ?? null,
+    teamSize: assumptions.team_size ?? null,
+    inventoryValue: assumptions.inventory_value ?? null,
+  })
+
+  // Actual tab
   const actualSections: { title: string; rows: Row[] }[] = [
     {
       title: 'Income Statement',
@@ -313,6 +700,7 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
     },
   ]
 
+  // Assumptions tab
   const assumptionsSections: { title: string; rows: Row[] }[] = [
     {
       title: 'Model Setup',
@@ -343,19 +731,26 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
         { label: 'COGS (monthly)', value: fmt(cogs) },
       ],
     },
+    {
+      title: 'Balance Sheet Inputs',
+      rows: [
+        { label: 'Outstanding Loans', value: fmt(assumptions.loans) },
+        { label: 'Equity Raised', value: fmt(assumptions.paid_in_capital) },
+        { label: 'Fixed Assets', value: fmt(assumptions.fixed_assets) },
+        { label: 'Monthly Capex', value: fmt(assumptions.capex_monthly) },
+        { label: 'Inventory Value', value: fmt(assumptions.inventory_value) },
+      ],
+    },
+    {
+      title: 'Working Capital & Tax',
+      rows: [
+        { label: 'AR Days (collect)', value: assumptions.days_receivable != null ? `${assumptions.days_receivable} days` : null },
+        { label: 'AP Days (pay)', value: assumptions.days_payable != null ? `${assumptions.days_payable} days` : null },
+        { label: 'Corporate Tax Rate', value: assumptions.tax_rate != null ? `${assumptions.tax_rate}%` : null },
+        { label: 'Depreciation (monthly)', value: fmt(assumptions.depreciation_monthly) },
+      ],
+    },
   ]
-
-  const projections = buildProjections(
-    assumptions.monthly_revenue ?? null,
-    assumptions.growth_rate_monthly ?? null,
-    assumptions.monthly_burn ?? null,
-    assumptions.gross_margin ?? null,
-    assumptions.current_cash ?? null,
-    modelPurpose?.horizon ?? null,
-    modelPurpose?.granularity ?? null,
-    nativeCurrency,
-    displayCurrency,
-  )
 
   const businessDesc = [
     businessType ? BUSINESS_TYPE_LABELS[businessType] : null,
@@ -363,7 +758,6 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
   ].filter(Boolean).join(' · ')
 
   let r = 1
-
   function renderSections(sections: { title: string; rows: Row[] }[]) {
     r = 1
     const elements: React.ReactNode[] = []
@@ -384,11 +778,14 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-white">
+      {/* Title bar */}
       <div className="shrink-0 border-b border-slate-200 bg-brand-navy px-5 py-3">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">Financial Model</p>
-            <h2 className="mt-0.5 text-sm font-semibold text-white">{assumptions.business_name ?? 'Your Business'}</h2>
+            <h2 className="mt-0.5 text-sm font-semibold text-white">
+              {assumptions.business_name ?? 'Your Business'}
+            </h2>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5">
@@ -412,6 +809,7 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
         </div>
       </div>
 
+      {/* Formula bar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-1.5">
         <span className="min-w-[36px] rounded border border-slate-200 bg-white px-1.5 py-0.5 text-center font-mono text-[11px] text-slate-500">A1</span>
         <span className="text-xs italic text-slate-400">fx</span>
@@ -421,9 +819,8 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
         </span>
       </div>
 
-      {activeTab === 'model' ? (
-        <ModelRow rowNum="#" period="Period" revenue="Revenue" grossProfit="Gross Profit" netPL="Net P&L" cash="Cash Balance" even={false} isHeader />
-      ) : (
+      {/* Column headers — Actual and Assumptions only */}
+      {!isModelTab && (
         <div className="flex shrink-0 border-b border-slate-200 bg-slate-100 text-[11px] font-medium text-slate-400 select-none">
           <div className="w-8 shrink-0 border-r border-slate-200 py-1 text-center">#</div>
           <div className="w-44 shrink-0 border-r border-slate-200 px-3 py-1">A</div>
@@ -431,37 +828,40 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
         </div>
       )}
 
+      {/* Data area */}
       <div className="flex-1 overflow-y-auto">
         {activeTab === 'actual' && renderSections(actualSections)}
         {activeTab === 'assumptions' && renderSections(assumptionsSections)}
-        {activeTab === 'model' && (
-          projections ? (
-            <>
-              {projections.map((p, i) => (
-                <ModelRow key={p.label} rowNum={i + 1} period={p.label} revenue={p.revenue} grossProfit={p.grossProfit} netPL={p.netPL} cash={p.cash} even={i % 2 === 0} />
-              ))}
-              {isFX && (
-                <div className="px-4 py-2 text-[10px] text-amber-600 bg-amber-50 border-t border-amber-100">
-                  Figures converted from {nativeCurrency} to {displayCurrency} using indicative FX rates. Confirm live rates before finalising.
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-center px-8 py-12">
-              <p className="text-sm font-medium text-slate-400">Complete the conversation to unlock projections</p>
-              <p className="mt-1 text-xs text-slate-300">Revenue, growth rate and burn are needed to build this model.</p>
-            </div>
-          )
+        {activeTab === 'pl' && (
+          projections
+            ? <ModelTable projections={projections} rowDefs={PL_ROWS} nativeCurrency={nativeCurrency} displayCurrency={displayCurrency} isFX={isFX} disclaimer="OPEX split estimated: 55% salaries, 25% marketing, 20% G&A." />
+            : <EmptyModel message="P&L needs revenue data to project." />
+        )}
+        {activeTab === 'bs' && (
+          projections
+            ? <ModelTable projections={projections} rowDefs={BS_ROWS} nativeCurrency={nativeCurrency} displayCurrency={displayCurrency} isFX={isFX} disclaimer="Opening retained earnings derived to balance. Loans assumed constant over projection period." />
+            : <EmptyModel message="Balance sheet needs revenue, cash, and financing data." />
+        )}
+        {activeTab === 'cf' && (
+          projections
+            ? <ModelTable projections={projections} rowDefs={CF_ROWS} nativeCurrency={nativeCurrency} displayCurrency={displayCurrency} isFX={isFX} disclaimer="Financing CF assumes no new debt or equity raised during the projection." />
+            : <EmptyModel message="Cash flow statement needs revenue and cost data." />
+        )}
+        {activeTab === 'ratios' && (
+          projections
+            ? <ModelTable projections={projections} rowDefs={RATIO_ROWS} nativeCurrency={nativeCurrency} displayCurrency={displayCurrency} isFX={isFX} />
+            : <EmptyModel message="Ratios need complete financial data." />
         )}
       </div>
 
-      <div className="shrink-0 flex items-end gap-0.5 border-t border-slate-200 bg-slate-100 px-3 pt-1.5">
+      {/* Tab bar — Excel style */}
+      <div className="shrink-0 flex items-end gap-0.5 border-t border-slate-200 bg-slate-100 px-3 pt-1.5 overflow-x-auto">
         {TABS.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={cn(
-              'rounded-t-md border-l border-r border-t px-4 py-1.5 text-xs font-medium transition-colors',
+              'rounded-t-md border-l border-r border-t px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap',
               activeTab === tab.id
                 ? 'border-slate-300 bg-white text-brand-navy'
                 : 'border-transparent bg-slate-100 text-slate-500 hover:bg-slate-50 hover:text-slate-700',
@@ -470,7 +870,7 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
             {tab.label}
           </button>
         ))}
-        <div className="flex-1 border-b border-slate-200" />
+        <div className="flex-1 border-b border-slate-200 min-w-0" />
       </div>
     </div>
   )
