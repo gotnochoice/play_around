@@ -1,5 +1,6 @@
 import { getAnthropicClient, MODEL, MAX_TOKENS } from '@/lib/ai/anthropic'
 import { DECK_SYSTEM_PROMPT } from '@/lib/ai/system-prompt'
+import { buildFewShotExamples } from '@/lib/logger'
 import type { ChatApiRequest } from '@/types'
 
 export const runtime = 'nodejs'
@@ -9,6 +10,9 @@ export async function POST(req: Request) {
     const { messages, deckContext, onboardingData }: ChatApiRequest & { deckContext?: string } = await req.json()
 
     let systemPrompt = DECK_SYSTEM_PROMPT
+
+    const fewShot = buildFewShotExamples(onboardingData?.businessType ?? undefined)
+    if (fewShot) systemPrompt += fewShot
 
     if (onboardingData) {
       systemPrompt +=
@@ -27,22 +31,15 @@ export async function POST(req: Request) {
       model: MODEL,
       max_tokens: MAX_TOKENS,
       system: systemPrompt,
-      messages: messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      })),
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
     })
 
     const encoder = new TextEncoder()
-
     const readable = new ReadableStream({
       async start(controller) {
         try {
           for await (const chunk of stream) {
-            if (
-              chunk.type === 'content_block_delta' &&
-              chunk.delta.type === 'text_delta'
-            ) {
+            if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
               controller.enqueue(encoder.encode(chunk.delta.text))
             }
           }
@@ -50,9 +47,7 @@ export async function POST(req: Request) {
           controller.close()
         }
       },
-      cancel() {
-        stream.controller.abort()
-      },
+      cancel() { stream.controller.abort() },
     })
 
     return new Response(readable, {
