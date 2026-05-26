@@ -154,6 +154,8 @@ export function ChatInterface({ onboardingData }: ChatInterfaceProps) {
   const streamingIdRef = useRef<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const inputRef = useRef<{ focus: () => void }>(null)
+  const pendingUploadMsgRef = useRef<string | null>(null)
+  const sendMessageRef = useRef<(content: string) => Promise<void>>(() => Promise.resolve())
 
   useEffect(() => {
     if (!state.isStreaming && !isThinking) {
@@ -167,10 +169,16 @@ export function ChatInterface({ onboardingData }: ChatInterfaceProps) {
     try {
       const res = await fetch('/api/upload', { method: 'POST', body: formData })
       if (!res.ok) throw new Error('Upload failed')
-      const { text, type } = await res.json()
-      setDeckContext(text)
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      const typeLabel = data.type === 'excel' ? 'financial model'
+        : data.type === 'csv' ? 'spreadsheet'
+        : data.type === 'pdf' ? 'pitch deck'
+        : 'document'
+      setDeckContext(data.text)
       setDeckFileName(file.name)
-      setDeckFileType(type ?? null)
+      setDeckFileType(data.type ?? null)
+      pendingUploadMsgRef.current = `I have shared my ${typeLabel}: ${file.name}`
     } catch (err) {
       console.error('File upload error:', err)
     }
@@ -227,6 +235,18 @@ export function ChatInterface({ onboardingData }: ChatInterfaceProps) {
     },
     [state.isStreaming, state.messages, isThinking, deckContext, deckFileType, onboardingData],
   )
+
+  // Keep sendMessageRef current so the upload effect always calls the latest version
+  useEffect(() => { sendMessageRef.current = sendMessage }, [sendMessage])
+
+  // Auto-send when a file has just been uploaded
+  useEffect(() => {
+    if (pendingUploadMsgRef.current) {
+      const msg = pendingUploadMsgRef.current
+      pendingUploadMsgRef.current = null
+      sendMessageRef.current(msg)
+    }
+  }, [deckContext]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleQuickReply = useCallback(
     (reply: string) => {
