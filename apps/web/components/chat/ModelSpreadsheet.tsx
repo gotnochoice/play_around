@@ -156,6 +156,7 @@ interface FullProjection {
   depreciationAmt: number
   ebit: number
   interestExpense: number
+  interestIncome: number
   ebt: number
   tax: number
   netProfit: number
@@ -200,6 +201,9 @@ interface FullProjection {
   burnMultiple: number | null
   arDays: number | null
   revenueGrowthPct: number | null
+  rule40: number | null
+  opexToRevenuePct: number
+  cashRunwayMonths: number | null
 }
 
 interface FullModelParams {
@@ -218,23 +222,40 @@ interface FullModelParams {
   fixedAssets: number | null
   capexMonthly: number | null
   taxRate: number | null
+  taxStartYear: number | null
   depreciation: number | null
   teamSize: number | null
   inventoryValue: number | null
+  monthlyInterestIncome: number | null
+  founderSalaryMonthly: number | null
+  revenueCurrency: string | null
+  priceGrowthAnnual: number | null
+  salaryGrowthAnnual: number | null
 }
 
 function buildFullModel(p: FullModelParams): FullProjection[] | null {
   if (!p.monthlyRevenue) return null
 
   const growth = (p.growthRate ?? 0) / 100
-  // cogsMargin: derived from actual COGS figure when available, else from gross_margin %
-  // gross_margin from the AI represents the GROSS margin (after direct delivery costs only)
-  const grossMarginPct = p.grossMargin ?? 40
+  const grossMarginPctInput = p.grossMargin ?? 40
   const cogsMargin = p.monthlyCOGS != null && p.monthlyRevenue != null && p.monthlyRevenue > 0
     ? p.monthlyCOGS / p.monthlyRevenue
-    : 1 - grossMarginPct / 100
-  const burn = p.monthlyBurn ?? p.monthlyRevenue * 1.5
+    : 1 - grossMarginPctInput / 100
+  const initialBurn = p.monthlyBurn ?? p.monthlyRevenue * 0.8
+  const initialCOGS = p.monthlyRevenue * cogsMargin
+  const initialOpexMonthly = Math.max(0, initialBurn - initialCOGS)
+
+  // Price growth: if the founder plans annual price increases, COGS margin compresses over time.
+  // Revenue per unit rises but COGS per unit stays closer to the original cost → gross margin improves.
+  const annualPriceGrowth = (p.priceGrowthAnnual ?? 0) / 100
+
+  // Salary growth: founder-provided annual %. No auto-inflation applied to any cost line.
+  const annualSalaryGrowth = (p.salaryGrowthAnnual ?? 0) / 100
+
+  const founderSalaryMonthly = p.founderSalaryMonthly ?? 0
   const taxPct = (p.taxRate ?? 0) / 100
+  const taxStartYear = p.taxStartYear ?? null
+  const monthlyIntIncome = p.monthlyInterestIncome ?? 0
   const monthlyInterest = 0.15 / 12
   const capex = p.capexMonthly ?? 0
   const usefulLife = 60
@@ -273,6 +294,7 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
 
   return periods.map(({ label, months }) => {
     const periodOpeningCash = cashBalance
+    const periodYear = Math.floor(cumulativeMonth / 12) + 1
 
     // P&L
     let revenue = 0
@@ -283,20 +305,42 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
       cumulativeMonth++
       if (m === months - 1) lastMonthRev = mRev
     }
-    const totalCost = burn * months
-    const cogs = revenue * cogsMargin
-    const grossProfit = revenue * (1 - cogsMargin)
-    const grossMarginPct = (1 - cogsMargin) * 100
-    const totalOpex = Math.max(0, totalCost - cogs)
-    const salaries = totalOpex * 0.55
-    const marketing = totalOpex * 0.25
-    const ga = totalOpex * 0.20
+    // COGS margin compression: as prices rise year-on-year, the founder earns more per unit
+    // but direct costs stay closer to original → gross margin improves over time.
+    const cogsMarginEff = annualPriceGrowth > 0
+      ? Math.max(0.05, cogsMargin / Math.pow(1 + annualPriceGrowth, periodYear - 1))
+      : cogsMargin
+    const cogs = revenue * cogsMarginEff
+    const grossProfit = revenue - cogs
+    const grossMarginPct = revenue > 0 ? (grossProfit / revenue) * 100 : 0
+
+    // OPEX: no auto-inflation on any line.
+    // Salaries grow by salary_growth_annual (founder-provided) or stay flat.
+    // Marketing and G&A stay flat; if volume growth requires more marketing spend,
+    // the AI challenges this in Stage 5 and the founder updates burn accordingly.
+    const salaryGrowthFactor = Math.pow(1 + annualSalaryGrowth, periodYear - 1)
+    let salaries: number
+    let marketing: number
+    let ga: number
+    if (founderSalaryMonthly > 0) {
+      salaries = founderSalaryMonthly * months * salaryGrowthFactor
+      const remainingFlat = Math.max(0, initialOpexMonthly - founderSalaryMonthly)
+      marketing = remainingFlat * 0.556 * months
+      ga = remainingFlat * 0.444 * months
+    } else {
+      salaries = initialOpexMonthly * 0.55 * months
+      marketing = initialOpexMonthly * 0.25 * months
+      ga = initialOpexMonthly * 0.20 * months
+    }
+    const totalOpex = salaries + marketing + ga
     const ebitda = grossProfit - totalOpex
     const depAmt = depMonthly * months
     const ebit = ebitda - depAmt
     const interest = openingLoans * monthlyInterest * months
-    const ebt = ebit - interest
-    const taxAmt = Math.max(0, ebt * taxPct)
+    const interestIncome = monthlyIntIncome * months
+    const ebt = ebit - interest + interestIncome
+    const effectiveTaxPct = (taxStartYear != null && periodYear >= taxStartYear) ? taxPct : 0
+    const taxAmt = Math.max(0, ebt * effectiveTaxPct)
     const netProfit = ebt - taxAmt
 
     // Working capital
@@ -335,13 +379,17 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
     const quickRatio = tcl > 0 ? (tca - openingInv) / tcl : null
     const ebitdaMarginPct = revenue > 0 ? (ebitda / revenue) * 100 : 0
     const netMarginPct = revenue > 0 ? (netProfit / revenue) * 100 : 0
+    const opexToRevenuePct = revenue > 0 ? (totalOpex / revenue) * 100 : 0
     const revPerEmp = p.teamSize && p.teamSize > 0 ? revenue / (p.teamSize * months) : null
-    const netBurn = Math.max(0, totalCost - revenue)
+    const netBurn = Math.max(0, cogs + totalOpex - revenue)
+    const monthlyBurnRate = (cogs + totalOpex) / months
+    const cashRunwayMonths = monthlyBurnRate > 0 ? Math.floor(closingCash / monthlyBurnRate) : null
     const revGrowth = prevRevenue != null ? revenue - prevRevenue : null
     const burnMultiple = revGrowth != null && revGrowth > 0 ? netBurn / revGrowth : null
     const revenueGrowthPct = prevRevenue != null && prevRevenue > 0
       ? ((revenue - prevRevenue) / prevRevenue) * 100
       : null
+    const rule40 = revenueGrowthPct != null ? revenueGrowthPct + ebitdaMarginPct : null
 
     prevAR = ar
     prevAP = ap
@@ -350,7 +398,7 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
     return {
       label, months,
       revenue, cogs, grossProfit, grossMarginPct, salaries, marketing, ga, totalOpex,
-      ebitda, depreciationAmt: depAmt, ebit, interestExpense: interest, ebt, tax: taxAmt, netProfit,
+      ebitda, depreciationAmt: depAmt, ebit, interestExpense: interest, interestIncome, ebt, tax: taxAmt, netProfit,
       grossFixedAssets: grossFA, accumulatedDepreciation: accumDep, netFixedAssets: netFA,
       cashBalance: closingCash, accountsReceivable: ar, inventoryValue: openingInv,
       totalCurrentAssets: tca, totalAssets,
@@ -361,9 +409,9 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
       cfNetProfit: netProfit, cfDepreciation: depAmt, cfARChange, cfAPChange, cfOperating,
       cfCapex, cfInvesting, cfLoanChange: 0, cfEquityChange: 0, cfFinancing,
       netCashMovement, openingCash: periodOpeningCash, closingCash,
-      currentRatio, quickRatio, ebitdaMarginPct, netMarginPct,
+      currentRatio, quickRatio, ebitdaMarginPct, netMarginPct, opexToRevenuePct,
       revenuePerEmployee: revPerEmp, burnMultiple, arDays: arDays || null,
-      revenueGrowthPct,
+      revenueGrowthPct, rule40, cashRunwayMonths,
     }
   })
 }
@@ -399,6 +447,7 @@ const PL_ROWS: StatementRowDef[] = [
   { key: 'depreciationAmt', label: 'Depreciation & Amortisation', indent: true },
   { key: 'ebit', label: 'EBIT (Operating Profit)', isTotal: true, colorFn: (v) => v >= 0 ? 'green' : 'red' },
   { key: 'interestExpense', label: 'Interest Expense', indent: true },
+  { key: 'interestIncome', label: 'Interest Income', indent: true, colorFn: (v) => v > 0 ? 'green' : 'neutral' },
   { key: 'ebt', label: 'Earnings Before Tax', isTotal: true },
   { key: 'tax', label: 'Income Tax', indent: true },
   { key: 'netProfit', label: 'Net Profit / PAT', isTotal: true, colorFn: (v) => v >= 0 ? 'green' : 'red' },
@@ -449,21 +498,24 @@ const CF_ROWS: StatementRowDef[] = [
 ]
 
 const RATIO_ROWS: StatementRowDef[] = [
-  { key: 'SECTION', label: 'LIQUIDITY', isSection: true },
-  { key: 'currentRatio', label: 'Current Ratio', format: 'ratio', colorFn: (v) => v >= 1.5 ? 'green' : v >= 1 ? 'amber' : 'red' },
-  { key: 'quickRatio', label: 'Quick Ratio', format: 'ratio', colorFn: (v) => v >= 1 ? 'green' : v >= 0.5 ? 'amber' : 'red' },
-  { key: 'SECTION', label: 'PROFITABILITY', isSection: true },
-  { key: 'grossMarginPct', label: 'Gross Margin', format: 'percent', colorFn: (v) => v >= 50 ? 'green' : v >= 25 ? 'amber' : 'red' },
-  { key: 'ebitdaMarginPct', label: 'EBITDA Margin', format: 'percent', colorFn: (v) => v >= 15 ? 'green' : v >= 0 ? 'amber' : 'red' },
-  { key: 'netMarginPct', label: 'Net Profit Margin', format: 'percent', colorFn: (v) => v >= 10 ? 'green' : v >= 0 ? 'amber' : 'red' },
-  { key: 'SECTION', label: 'EFFICIENCY', isSection: true },
-  { key: 'revenuePerEmployee', label: 'Revenue / Employee (monthly)', colorFn: () => 'neutral' },
+  { key: 'SECTION', label: 'STARTUP HEALTH', isSection: true },
+  { key: 'rule40', label: 'Rule of 40 (growth % + EBITDA %)', format: 'number', colorFn: (v) => v >= 40 ? 'green' : v >= 20 ? 'amber' : 'red' },
+  { key: 'cashRunwayMonths', label: 'Cash Runway (months)', format: 'number', colorFn: (v) => v >= 18 ? 'green' : v >= 6 ? 'amber' : 'red' },
   { key: 'burnMultiple', label: 'Burn Multiple', format: 'ratio', colorFn: (v) => v <= 1 ? 'green' : v <= 2 ? 'amber' : 'red' },
-  { key: 'arDays', label: 'AR Days (collect)', format: 'days' },
+  { key: 'SECTION', label: 'PROFITABILITY', isSection: true },
+  { key: 'grossMarginPct', label: 'Gross Margin %', format: 'percent', colorFn: (v) => v >= 50 ? 'green' : v >= 25 ? 'amber' : 'red' },
+  { key: 'ebitdaMarginPct', label: 'EBITDA Margin %', format: 'percent', colorFn: (v) => v >= 20 ? 'green' : v >= 0 ? 'amber' : 'red' },
+  { key: 'netMarginPct', label: 'Net Profit Margin %', format: 'percent', colorFn: (v) => v >= 10 ? 'green' : v >= 0 ? 'amber' : 'red' },
+  { key: 'SECTION', label: 'OPERATING LEVERAGE', isSection: true },
+  { key: 'opexToRevenuePct', label: 'OPEX / Revenue (↓ = leverage)', format: 'percent', colorFn: (v) => v <= 30 ? 'green' : v <= 60 ? 'amber' : 'red' },
+  { key: 'revenuePerEmployee', label: 'Revenue / Employee (monthly)', colorFn: () => 'neutral' },
   { key: 'SECTION', label: 'GROWTH', isSection: true },
-  { key: 'revenueGrowthPct', label: 'Revenue Growth', format: 'percent', colorFn: (v) => v > 0 ? 'green' : v === 0 ? 'amber' : 'red' },
+  { key: 'revenueGrowthPct', label: 'Revenue Growth (period)', format: 'percent', colorFn: (v) => v > 0 ? 'green' : v === 0 ? 'amber' : 'red' },
   { key: 'revenue', label: 'Revenue (Period)', isTotal: true },
   { key: 'netProfit', label: 'Net Profit (Period)', isTotal: true, colorFn: (v) => v >= 0 ? 'green' : 'red' },
+  { key: 'SECTION', label: 'LIQUIDITY', isSection: true },
+  { key: 'currentRatio', label: 'Current Ratio', format: 'ratio', colorFn: (v) => v >= 1.5 ? 'green' : v >= 1 ? 'amber' : 'red' },
+  { key: 'arDays', label: 'AR Days (collect)', format: 'days' },
 ]
 
 // ───── CELL FORMATTER ─────────────────────────────────────────────────────────
@@ -619,15 +671,13 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
       : null
 
   const cogs =
-    assumptions.monthly_cogs != null
-      ? assumptions.monthly_cogs
-      : assumptions.monthly_revenue != null && assumptions.gross_margin != null
-        ? assumptions.monthly_revenue * (1 - assumptions.gross_margin / 100)
-        : null
+    assumptions.monthly_revenue != null && assumptions.gross_margin != null
+      ? assumptions.monthly_revenue * (1 - assumptions.gross_margin / 100)
+      : null
 
   const grossProfit =
-    assumptions.monthly_revenue != null && cogs != null
-      ? assumptions.monthly_revenue - cogs
+    assumptions.monthly_revenue != null && assumptions.gross_margin != null
+      ? assumptions.monthly_revenue * (assumptions.gross_margin / 100)
       : null
 
   const opex =
@@ -641,10 +691,6 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
     assumptions.monthly_revenue != null && assumptions.team_size != null && assumptions.team_size > 0
       ? Math.round(assumptions.monthly_revenue / assumptions.team_size)
       : null
-
-  const displayGrossMargin = assumptions.monthly_revenue != null && cogs != null && assumptions.monthly_revenue > 0
-    ? Math.round(((assumptions.monthly_revenue - cogs) / assumptions.monthly_revenue) * 100)
-    : assumptions.gross_margin ?? null
 
   // Build full 3-statement model
   const projections = buildFullModel({
@@ -663,9 +709,15 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
     fixedAssets: assumptions.fixed_assets ?? null,
     capexMonthly: assumptions.capex_monthly ?? null,
     taxRate: assumptions.tax_rate ?? null,
+    taxStartYear: assumptions.tax_start_year ?? null,
     depreciation: assumptions.depreciation_monthly ?? null,
     teamSize: assumptions.team_size ?? null,
     inventoryValue: assumptions.inventory_value ?? null,
+    monthlyInterestIncome: assumptions.monthly_interest_income ?? null,
+    founderSalaryMonthly: assumptions.founder_salary_monthly ?? null,
+    revenueCurrency: assumptions.revenue_currency ?? null,
+    priceGrowthAnnual: assumptions.price_growth_annual ?? null,
+    salaryGrowthAnnual: assumptions.salary_growth_annual ?? null,
   })
 
   // Actual tab
@@ -679,7 +731,7 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
         },
         { label: 'Cost of Goods (COGS)', value: fmt(cogs), indent: true },
         { label: 'Gross Profit', value: fmt(grossProfit) },
-        { label: 'Gross Margin', value: displayGrossMargin != null ? `${displayGrossMargin}%` : null },
+        { label: 'Gross Margin', value: assumptions.gross_margin != null ? `${assumptions.gross_margin}%` : null },
         { label: 'Operating Costs', value: fmt(opex), indent: true },
         {
           label: 'Operating Profit',
@@ -732,7 +784,8 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
         { label: 'Cost Currency', value: assumptions.cost_currency ?? null },
         { label: 'Multi-currency', value: assumptions.is_multi_currency != null ? (assumptions.is_multi_currency ? 'Yes' : 'No') : null },
         { label: 'Monthly Growth Rate', value: assumptions.growth_rate_monthly != null ? `${assumptions.growth_rate_monthly}% / month` : null },
-        { label: 'Gross Margin Target', value: displayGrossMargin != null ? `${displayGrossMargin}%` : null },
+        { label: 'Price Growth (annual)', value: assumptions.price_growth_annual != null ? `${assumptions.price_growth_annual}% / yr` : null },
+        { label: 'Gross Margin Target', value: assumptions.gross_margin != null ? `${assumptions.gross_margin}%` : null },
         { label: 'Pricing Model', value: assumptions.pricing_model ?? null },
         { label: 'Customer Count', value: assumptions.customer_count != null ? assumptions.customer_count.toLocaleString() : null },
       ],
@@ -740,10 +793,10 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
     {
       title: 'Cost Assumptions',
       rows: [
-        { label: 'Monthly Burn (Total)', value: fmt(assumptions.monthly_burn) },
-        { label: 'Monthly COGS', value: fmt(cogs) },
-        { label: 'Monthly OPEX', value: fmt(opex) },
+        { label: 'Monthly Burn', value: fmt(assumptions.monthly_burn) },
         { label: 'Team Size', value: assumptions.team_size != null ? `${assumptions.team_size} people` : null },
+        { label: 'Salary Growth (annual)', value: assumptions.salary_growth_annual != null ? `${assumptions.salary_growth_annual}% / yr` : null },
+        { label: 'COGS (monthly)', value: fmt(cogs) },
       ],
     },
     {
@@ -849,7 +902,7 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
         {activeTab === 'assumptions' && renderSections(assumptionsSections)}
         {activeTab === 'pl' && (
           projections
-            ? <ModelTable projections={projections} rowDefs={PL_ROWS} nativeCurrency={nativeCurrency} displayCurrency={displayCurrency} isFX={isFX} disclaimer="OPEX split estimated: 55% salaries, 25% marketing, 20% G&A." />
+            ? <ModelTable projections={projections} rowDefs={PL_ROWS} nativeCurrency={nativeCurrency} displayCurrency={displayCurrency} isFX={isFX} disclaimer="Salaries grow by salary_growth_annual if provided, else flat. COGS margin compresses if price_growth_annual is set. Marketing and G&A are flat unless burn is revised." />
             : <EmptyModel message="P&L needs revenue data to project." />
         )}
         {activeTab === 'bs' && (
