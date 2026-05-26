@@ -68,9 +68,14 @@ export interface CapturedAssumptions {
   fixed_assets: number | null
   capex_monthly: number | null
   tax_rate: number | null
+  tax_start_year: number | null
   depreciation_monthly: number | null
   inventory_value: number | null
   monthly_cogs: number | null
+  monthly_interest_income: number | null
+  founder_salary_monthly: number | null
+  price_growth_annual: number | null
+  salary_growth_annual: number | null
   [key: string]: unknown
 }
 
