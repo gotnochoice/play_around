@@ -264,15 +264,33 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
     : p.fixedAssets ? p.fixedAssets / usefulLife : 0
 
   const periods: { label: string; months: number }[] = []
+  const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  const now = new Date()
+  const startYear = now.getFullYear()
+  const startMonth = now.getMonth() // 0-indexed
+
   if (p.granularity === 'annual') {
     const yrs = p.horizon === '5yr' ? 5 : p.horizon === '3yr' ? 3 : 1
-    for (let y = 1; y <= yrs; y++) periods.push({ label: `Year ${y}`, months: 12 })
+    for (let y = 0; y < yrs; y++) periods.push({ label: `${startYear + y}`, months: 12 })
   } else if (p.granularity === 'quarterly') {
     const total = p.horizon === '5yr' ? 60 : p.horizon === '3yr' ? 36 : 12
-    for (let q = 1; q <= total / 3; q++) periods.push({ label: `Q${q}`, months: 3 })
+    let qMonth = startMonth
+    let qYear = startYear
+    for (let q = 0; q < total / 3; q++) {
+      const calQ = Math.floor(qMonth / 3) + 1
+      periods.push({ label: `Q${calQ} ${qYear}`, months: 3 })
+      qMonth += 3
+      if (qMonth >= 12) { qMonth -= 12; qYear++ }
+    }
   } else {
     const totalMonths = p.horizon === '5yr' ? 60 : p.horizon === '3yr' ? 36 : 12
-    for (let m = 1; m <= totalMonths; m++) periods.push({ label: `M${m}`, months: 1 })
+    let mMonth = startMonth
+    let mYear = startYear
+    for (let m = 0; m < totalMonths; m++) {
+      periods.push({ label: `${MONTH_SHORT[mMonth]} ${mYear}`, months: 1 })
+      mMonth++
+      if (mMonth >= 12) { mMonth = 0; mYear++ }
+    }
   }
 
   // Opening balance sheet — derive retained earnings to balance at open
