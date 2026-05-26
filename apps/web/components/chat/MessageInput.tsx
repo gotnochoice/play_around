@@ -18,6 +18,7 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
     const [uploading, setUploading] = useState(false)
     const [isRecording, setIsRecording] = useState(false)
     const [hasSpeechSupport, setHasSpeechSupport] = useState(false)
+    const [micError, setMicError] = useState<string | null>(null)
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
     const recognitionRef = useRef<any>(null)
@@ -81,11 +82,12 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
       const recognition = new SR()
       recognition.continuous = false
       recognition.interimResults = false
-      recognition.lang = 'en-US'
+      // No lang override — let the browser use the system language for best accent matching
 
       recognition.onresult = (e: any) => {
         const transcript = e.results[0][0].transcript
         setValue((prev) => (prev ? `${prev} ${transcript}` : transcript))
+        setMicError(null)
         setTimeout(() => {
           if (textareaRef.current) {
             textareaRef.current.style.height = 'auto'
@@ -95,7 +97,12 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
       }
 
       recognition.onend = () => setIsRecording(false)
-      recognition.onerror = () => setIsRecording(false)
+      recognition.onerror = (e: any) => {
+        setIsRecording(false)
+        if (e.error === 'not-allowed') setMicError('Microphone access denied. Check your browser permissions.')
+        else if (e.error === 'no-speech') setMicError(null)
+        else setMicError('Voice input unavailable. Try typing instead.')
+      }
 
       recognitionRef.current = recognition
       recognition.start()
@@ -187,10 +194,14 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
           </button>
         </div>
 
-        <p className="mt-2 text-center text-xs text-slate-400">
-          Enter to send · Shift+Enter for new line
-          {hasSpeechSupport ? ' · tap mic to speak' : ''}
-        </p>
+        {micError ? (
+          <p className="mt-2 text-center text-xs text-red-400">{micError}</p>
+        ) : (
+          <p className="mt-2 text-center text-xs text-slate-400">
+            Enter to send · Shift+Enter for new line
+            {hasSpeechSupport ? ' · tap mic to speak' : ''}
+          </p>
+        )}
       </div>
     )
   },
