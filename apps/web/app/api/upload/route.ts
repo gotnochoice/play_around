@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
 
     // Excel
     if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+      // @ts-ignore
       const XLSX = await import('xlsx')
       const workbook = XLSX.read(buffer, { type: 'buffer' })
       const lines: string[] = []
