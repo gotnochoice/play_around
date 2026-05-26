@@ -131,7 +131,7 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled || uploading}
-            title="Attach pitch deck (PDF)"
+            title="Attach pitch deck, financials, or spreadsheet (PDF, Excel, CSV)"
             className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-600 disabled:cursor-not-allowed"
           >
             <Paperclip className="h-4 w-4" />
@@ -139,7 +139,7 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.txt"
+            accept=".pdf,.txt,.xlsx,.xls,.csv"
             className="hidden"
             onChange={handleFileChange}
           />
