@@ -7,7 +7,7 @@ export const runtime = 'nodejs'
 
 export async function POST(req: Request) {
   try {
-    const { messages, deckContext, onboardingData }: ChatApiRequest & { deckContext?: string } = await req.json()
+    const { messages, deckContext, deckFileType, onboardingData }: ChatApiRequest & { deckContext?: string; deckFileType?: string } = await req.json()
 
     let systemPrompt = DECK_SYSTEM_PROMPT
 
@@ -20,7 +20,18 @@ export async function POST(req: Request) {
     }
 
     if (deckContext) {
-      systemPrompt += `\n\n---\nThe founder has uploaded their pitch deck. Use it as background context:\n\n${deckContext.slice(0, 8000)}`
+      const fileLabel = deckFileType === 'excel' ? 'financial model (Excel)'
+        : deckFileType === 'csv' ? 'financial data (CSV)'
+        : deckFileType === 'pdf' ? 'pitch deck (PDF)'
+        : 'document'
+      systemPrompt += `\n\n---\nFOUNDER-UPLOADED ${fileLabel.toUpperCase()}:\n`
+      systemPrompt += `The founder has uploaded their ${fileLabel}. `
+      if (deckFileType === 'excel' || deckFileType === 'csv') {
+        systemPrompt += `Extract every financial figure from it: revenue, costs, margins, headcount, cash, loans, and any projections. When you would normally ask for a number that appears in this file, use the uploaded figure and confirm it with the founder instead of asking from scratch. Flag any numbers that look like estimates or projections rather than actuals.\n\n`
+      } else {
+        systemPrompt += `Use it as background context. Extract any financial figures, team size, revenue numbers, cost data, or growth targets mentioned. Where a figure appears here that you would otherwise ask about, reference it and confirm rather than asking cold.\n\n`
+      }
+      systemPrompt += deckContext.slice(0, 10000)
     }
 
     if (!messages || messages.length === 0) {
@@ -31,15 +42,22 @@ export async function POST(req: Request) {
       model: MODEL,
       max_tokens: MAX_TOKENS,
       system: systemPrompt,
-      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      messages: messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      })),
     })
 
     const encoder = new TextEncoder()
+
     const readable = new ReadableStream({
       async start(controller) {
         try {
           for await (const chunk of stream) {
-            if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+            if (
+              chunk.type === 'content_block_delta' &&
+              chunk.delta.type === 'text_delta'
+            ) {
               controller.enqueue(encoder.encode(chunk.delta.text))
             }
           }
@@ -47,7 +65,9 @@ export async function POST(req: Request) {
           controller.close()
         }
       },
-      cancel() { stream.controller.abort() },
+      cancel() {
+        stream.controller.abort()
+      },
     })
 
     return new Response(readable, {
