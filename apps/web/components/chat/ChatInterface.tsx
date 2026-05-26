@@ -38,7 +38,6 @@ const BUSINESS_TYPE_MAP: Record<string, string> = {
 }
 
 function buildInitialGreeting(data: OnboardingData): string {
-  const typeLabel = data.businessType ? (BUSINESS_TYPE_MAP[data.businessType] ?? data.businessType) : 'business'
   const meta = {
     stage: 0,
     stage_name: 'Model Purpose',
@@ -151,6 +150,7 @@ export function ChatInterface({ onboardingData }: ChatInterfaceProps) {
   const [isThinking, setIsThinking] = useState(false)
   const [deckContext, setDeckContext] = useState<string | null>(null)
   const [deckFileName, setDeckFileName] = useState<string | null>(null)
+  const [deckFileType, setDeckFileType] = useState<string | null>(null)
   const streamingIdRef = useRef<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const inputRef = useRef<{ focus: () => void }>(null)
@@ -167,9 +167,10 @@ export function ChatInterface({ onboardingData }: ChatInterfaceProps) {
     try {
       const res = await fetch('/api/upload', { method: 'POST', body: formData })
       if (!res.ok) throw new Error('Upload failed')
-      const { text } = await res.json()
+      const { text, type } = await res.json()
       setDeckContext(text)
       setDeckFileName(file.name)
+      setDeckFileType(type ?? null)
     } catch (err) {
       console.error('File upload error:', err)
     }
@@ -192,7 +193,7 @@ export function ChatInterface({ onboardingData }: ChatInterfaceProps) {
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: history, deckContext, onboardingData }),
+          body: JSON.stringify({ messages: history, deckContext, deckFileType, onboardingData }),
           signal: abortRef.current.signal,
         })
         if (!response.ok || !response.body) throw new Error(`API error: ${response.status}`)
@@ -224,7 +225,7 @@ export function ChatInterface({ onboardingData }: ChatInterfaceProps) {
         streamingIdRef.current = null
       }
     },
-    [state.isStreaming, state.messages, isThinking, deckContext, onboardingData],
+    [state.isStreaming, state.messages, isThinking, deckContext, deckFileType, onboardingData],
   )
 
   const handleQuickReply = useCallback(
