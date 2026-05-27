@@ -12,5 +12,5 @@ export function getAnthropicClient(): Anthropic {
   return _client
 }
 
-export const MODEL = 'claude-sonnet-4-6'
+export const MODEL = 'claude-haiku-4-5-20251001'
 export const MAX_TOKENS = 1024
