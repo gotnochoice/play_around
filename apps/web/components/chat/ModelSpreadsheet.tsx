@@ -138,12 +138,11 @@ function PadRow({ rowNum, even }: { rowNum: number; even: boolean }) {
   )
 }
 
-// ───── 3-STATEMENT MODEL: TYPES ───────────────────────────────────────────────
+// ───── 3-STATEMENT MODEL ──────────────────────────────────────────────────────
 
 interface FullProjection {
   label: string
   months: number
-  // P&L / SOPL
   revenue: number
   cogs: number
   grossProfit: number
@@ -160,7 +159,6 @@ interface FullProjection {
   ebt: number
   tax: number
   netProfit: number
-  // Balance Sheet / SOFP
   grossFixedAssets: number
   accumulatedDepreciation: number
   netFixedAssets: number
@@ -178,7 +176,6 @@ interface FullProjection {
   totalLiabilities: number
   totalEquityAndLiabilities: number
   balanceCheck: number
-  // Cash Flow
   cfNetProfit: number
   cfDepreciation: number
   cfARChange: number
@@ -192,7 +189,6 @@ interface FullProjection {
   netCashMovement: number
   openingCash: number
   closingCash: number
-  // Ratios
   currentRatio: number | null
   quickRatio: number | null
   ebitdaMarginPct: number
@@ -245,13 +241,8 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
   const initialCOGS = p.monthlyRevenue * cogsMargin
   const initialOpexMonthly = Math.max(0, initialBurn - initialCOGS)
 
-  // Price growth: if the founder plans annual price increases, COGS margin compresses over time.
-  // Revenue per unit rises but COGS per unit stays closer to the original cost → gross margin improves.
   const annualPriceGrowth = (p.priceGrowthAnnual ?? 0) / 100
-
-  // Salary growth: founder-provided annual %. No auto-inflation applied to any cost line.
   const annualSalaryGrowth = (p.salaryGrowthAnnual ?? 0) / 100
-
   const founderSalaryMonthly = p.founderSalaryMonthly ?? 0
   const taxPct = (p.taxRate ?? 0) / 100
   const taxStartYear = p.taxStartYear ?? null
@@ -267,7 +258,7 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
   const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
   const now = new Date()
   const startYear = now.getFullYear()
-  const startMonth = now.getMonth() // 0-indexed
+  const startMonth = now.getMonth()
 
   if (p.granularity === 'annual') {
     const yrs = p.horizon === '5yr' ? 5 : p.horizon === '3yr' ? 3 : 1
@@ -293,7 +284,6 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
     }
   }
 
-  // Opening balance sheet — derive retained earnings to balance at open
   const openingCash = p.currentCash ?? 0
   const openingFA = p.fixedAssets ?? 0
   const openingInv = p.inventoryValue ?? 0
@@ -314,7 +304,6 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
     const periodOpeningCash = cashBalance
     const periodYear = Math.floor(cumulativeMonth / 12) + 1
 
-    // P&L
     let revenue = 0
     let lastMonthRev = 0
     for (let m = 0; m < months; m++) {
@@ -323,8 +312,7 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
       cumulativeMonth++
       if (m === months - 1) lastMonthRev = mRev
     }
-    // COGS margin compression: as prices rise year-on-year, the founder earns more per unit
-    // but direct costs stay closer to original → gross margin improves over time.
+
     const cogsMarginEff = annualPriceGrowth > 0
       ? Math.max(0.05, cogsMargin / Math.pow(1 + annualPriceGrowth, periodYear - 1))
       : cogsMargin
@@ -332,10 +320,6 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
     const grossProfit = revenue - cogs
     const grossMarginPct = revenue > 0 ? (grossProfit / revenue) * 100 : 0
 
-    // OPEX: no auto-inflation on any line.
-    // Salaries grow by salary_growth_annual (founder-provided) or stay flat.
-    // Marketing and G&A stay flat; if volume growth requires more marketing spend,
-    // the AI challenges this in Stage 5 and the founder updates burn accordingly.
     const salaryGrowthFactor = Math.pow(1 + annualSalaryGrowth, periodYear - 1)
     let salaries: number
     let marketing: number
@@ -361,13 +345,11 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
     const taxAmt = Math.max(0, ebt * effectiveTaxPct)
     const netProfit = ebt - taxAmt
 
-    // Working capital
     const arDays = p.daysReceivable ?? 0
     const apDays = p.daysPayable ?? 0
     const ar = lastMonthRev * (arDays / 30)
     const ap = lastMonthRev * cogsMargin * (apDays / 30)
 
-    // Cash Flow
     const cfARChange = -(ar - prevAR)
     const cfAPChange = ap - prevAP
     const cfOperating = netProfit + depAmt + cfARChange + cfAPChange
@@ -378,7 +360,6 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
     cashBalance = periodOpeningCash + netCashMovement
     const closingCash = cashBalance
 
-    // Balance Sheet
     grossFA += capex * months
     accumDep += depAmt
     const netFA = Math.max(0, grossFA - accumDep)
@@ -392,7 +373,6 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
     const totalEL = totalEquity + totalLiabilities
     const balanceCheck = totalAssets - totalEL
 
-    // Ratios
     const currentRatio = tcl > 0 ? tca / tcl : null
     const quickRatio = tcl > 0 ? (tca - openingInv) / tcl : null
     const ebitdaMarginPct = revenue > 0 ? (ebitda / revenue) * 100 : 0
@@ -710,7 +690,6 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
       ? Math.round(assumptions.monthly_revenue / assumptions.team_size)
       : null
 
-  // Build full 3-statement model
   const projections = buildFullModel({
     monthlyRevenue: assumptions.monthly_revenue ?? null,
     monthlyCOGS: assumptions.monthly_cogs ?? null,
@@ -738,7 +717,6 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
     salaryGrowthAnnual: assumptions.salary_growth_annual ?? null,
   })
 
-  // Actual tab
   const actualSections: { title: string; rows: Row[] }[] = [
     {
       title: 'Income Statement',
@@ -784,7 +762,6 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
     },
   ]
 
-  // Assumptions tab
   const assumptionsSections: { title: string; rows: Row[] }[] = [
     {
       title: 'Model Setup',
@@ -940,7 +917,7 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
         )}
       </div>
 
-      {/* Tab bar — Excel style */}
+      {/* Tab bar */}
       <div className="shrink-0 flex items-end gap-0.5 border-t border-slate-200 bg-slate-100 px-3 pt-1.5 overflow-x-auto">
         {TABS.map((tab) => (
           <button
