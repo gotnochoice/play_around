@@ -152,10 +152,10 @@ export function ChatInterface({ onboardingData }: ChatInterfaceProps) {
   const [deckContext, setDeckContext] = useState<string | null>(null)
   const [deckFileName, setDeckFileName] = useState<string | null>(null)
   const [deckFileType, setDeckFileType] = useState<string | null>(null)
+  const [pendingUploadMsg, setPendingUploadMsg] = useState<string | null>(null)
   const streamingIdRef = useRef<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const inputRef = useRef<{ focus: () => void }>(null)
-  const pendingUploadMsgRef = useRef<string | null>(null)
   const sendMessageRef = useRef<(content: string) => Promise<void>>(() => Promise.resolve())
 
   useEffect(() => {
@@ -178,7 +178,7 @@ export function ChatInterface({ onboardingData }: ChatInterfaceProps) {
     setDeckContext(data.text)
     setDeckFileName(file.name)
     setDeckFileType(data.type ?? null)
-    pendingUploadMsgRef.current = `I have shared my ${typeLabel}: ${file.name}`
+    setPendingUploadMsg(`I have shared my ${typeLabel}: ${file.name}`)
   }, [])
 
   const sendMessage = useCallback(
@@ -244,14 +244,15 @@ export function ChatInterface({ onboardingData }: ChatInterfaceProps) {
   // Keep sendMessageRef current so the upload effect always calls the latest version
   useEffect(() => { sendMessageRef.current = sendMessage }, [sendMessage])
 
-  // Auto-send when a file has just been uploaded
+  // Send the upload notification once streaming is idle — if streaming was active
+  // when the upload completed the message queues here until the AI finishes responding.
   useEffect(() => {
-    if (pendingUploadMsgRef.current) {
-      const msg = pendingUploadMsgRef.current
-      pendingUploadMsgRef.current = null
+    if (pendingUploadMsg && !state.isStreaming && !isThinking) {
+      const msg = pendingUploadMsg
+      setPendingUploadMsg(null)
       sendMessageRef.current(msg)
     }
-  }, [deckContext]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pendingUploadMsg, state.isStreaming, isThinking])
 
   const handleQuickReply = useCallback(
     (reply: string) => {
