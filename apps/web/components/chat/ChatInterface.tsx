@@ -38,7 +38,6 @@ const BUSINESS_TYPE_MAP: Record<string, string> = {
 }
 
 function buildInitialGreeting(data: OnboardingData): string {
-  const typeLabel = data.businessType ? (BUSINESS_TYPE_MAP[data.businessType] ?? data.businessType) : 'business'
   const meta = {
     stage: 0,
     stage_name: 'Model Purpose',
@@ -198,7 +197,7 @@ export function ChatInterface({ onboardingData }: ChatInterfaceProps) {
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: history, deckContext, deckFileType, onboardingData }),
+          body: JSON.stringify({ messages: history, deckContext, deckFileType, onboardingData, currentStage: state.currentStage }),
           signal: abortRef.current.signal,
         })
         if (!response.ok || !response.body) {
@@ -238,7 +237,7 @@ export function ChatInterface({ onboardingData }: ChatInterfaceProps) {
         streamingIdRef.current = null
       }
     },
-    [state.isStreaming, state.messages, isThinking, deckContext, onboardingData],
+    [state.isStreaming, state.messages, state.currentStage, isThinking, deckContext, deckFileType, onboardingData],
   )
 
   // Keep sendMessageRef current so the upload effect always calls the latest version
@@ -306,12 +305,10 @@ export function ChatInterface({ onboardingData }: ChatInterfaceProps) {
       <StageSidebar state={state} />
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Spreadsheet main area */}
         <div className="flex-1 overflow-hidden border-r border-slate-200">
           <ModelSpreadsheet state={state} />
         </div>
 
-        {/* Chat panel */}
         <div className="flex w-[380px] shrink-0 flex-col overflow-hidden bg-brand-light/30">
           <header className="shrink-0 border-b border-slate-100 bg-white px-4 py-3">
             <div className="flex items-center justify-between">
@@ -348,7 +345,6 @@ export function ChatInterface({ onboardingData }: ChatInterfaceProps) {
             onFeedback={handleFeedback}
           />
 
-          {/* Quick reply chips */}
           {showQuickReplies && (
             <div className="shrink-0 border-t border-slate-100 bg-white px-4 py-3">
               <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-slate-400">
