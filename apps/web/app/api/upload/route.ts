@@ -3,7 +3,7 @@ import { getAnthropicClient } from '@/lib/ai/anthropic'
 
 export const runtime = 'nodejs'
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+const MAX_FILE_SIZE = 20 * 1024 * 1024 // 20MB
 
 export async function POST(req: NextRequest) {
   let file: File | null = null
@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: 'File too large. Maximum size is 10 MB.' }, { status: 400 })
+      return NextResponse.json({ error: 'File too large. Maximum size is 20 MB.' }, { status: 400 })
     }
 
     const bytes = await file.arrayBuffer()
