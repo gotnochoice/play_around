@@ -16,6 +16,7 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
     const [value, setValue] = useState('')
     const [pendingFile, setPendingFile] = useState<File | null>(null)
     const [uploading, setUploading] = useState(false)
+    const [uploadError, setUploadError] = useState<string | null>(null)
     const [isRecording, setIsRecording] = useState(false)
     const [hasSpeechSupport, setHasSpeechSupport] = useState(false)
     const [micError, setMicError] = useState<string | null>(null)
@@ -60,9 +61,13 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
       const file = e.target.files?.[0]
       if (!file) return
       setPendingFile(file)
+      setUploadError(null)
       setUploading(true)
       try {
         await onFileUpload(file)
+      } catch (err) {
+        setUploadError(err instanceof Error ? err.message : 'Upload failed. Please try again.')
+        setPendingFile(null)
       } finally {
         setUploading(false)
       }
@@ -82,7 +87,6 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
       const recognition = new SR()
       recognition.continuous = false
       recognition.interimResults = false
-      // No lang override — let the browser use the system language for best accent matching
 
       recognition.onresult = (e: any) => {
         const transcript = e.results[0][0].transcript
@@ -109,6 +113,8 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
       setIsRecording(true)
     }
 
+    const statusMessage = micError ?? uploadError
+
     return (
       <div className="border-t border-slate-100 bg-white px-4 py-4">
         {pendingFile && (
@@ -132,11 +138,11 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
           className={cn(
             'flex items-end gap-2 rounded-2xl border border-slate-200 bg-slate-50/60 px-3 py-2.5 transition-all duration-200',
             'focus-within:border-indigo-200 focus-within:bg-white focus-within:ring-2 focus-within:ring-indigo-50',
-            disabled && 'opacity-50',
+            (disabled || uploading) && 'opacity-50',
           )}
         >
           <button
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => { setUploadError(null); fileInputRef.current?.click() }}
             disabled={disabled || uploading}
             title="Attach pitch deck, financials, or spreadsheet (PDF, Excel, CSV)"
             className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-600 disabled:cursor-not-allowed"
@@ -156,8 +162,8 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
             value={value}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            disabled={disabled}
-            placeholder={placeholder ?? 'Type your answer…'}
+            disabled={disabled || uploading}
+            placeholder={uploading ? 'Uploading file, please wait…' : (placeholder ?? 'Type your answer…')}
             rows={1}
             className="flex-1 resize-none bg-transparent py-1 text-sm text-slate-800 placeholder-slate-400 outline-none"
             style={{ maxHeight: '160px' }}
@@ -181,11 +187,11 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
 
           <button
             onClick={handleSend}
-            disabled={!value.trim() || disabled}
+            disabled={!value.trim() || disabled || uploading}
             aria-label="Send message"
             className={cn(
               'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-all',
-              value.trim() && !disabled
+              value.trim() && !disabled && !uploading
                 ? 'bg-brand-navy text-white shadow-sm hover:opacity-90'
                 : 'cursor-not-allowed bg-slate-100 text-slate-300',
             )}
@@ -194,8 +200,8 @@ export const MessageInput = forwardRef<{ focus: () => void }, MessageInputProps>
           </button>
         </div>
 
-        {micError ? (
-          <p className="mt-2 text-center text-xs text-red-400">{micError}</p>
+        {statusMessage ? (
+          <p className="mt-2 text-center text-xs text-red-400">{statusMessage}</p>
         ) : (
           <p className="mt-2 text-center text-xs text-slate-400">
             Enter to send · Shift+Enter for new line
