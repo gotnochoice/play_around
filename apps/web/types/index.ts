@@ -45,6 +45,16 @@ export interface OnboardingData {
   currency: string
 }
 
+export interface RevenueStream {
+  name: string
+  monthly_revenue: number | null
+  unit_price: number | null
+  unit_volume: number | null
+  price_growth_annual: number | null
+  cogs_margin: number | null
+  pricing_model: string | null
+}
+
 export interface CapturedAssumptions {
   founder_name: string | null
   current_cash: number | null
@@ -76,6 +86,7 @@ export interface CapturedAssumptions {
   founder_salary_monthly: number | null
   price_growth_annual: number | null
   salary_growth_annual: number | null
+  revenue_streams: RevenueStream[] | null
   [key: string]: unknown
 }
 
