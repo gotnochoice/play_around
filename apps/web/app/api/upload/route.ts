@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getAnthropicClient } from '@/lib/ai/anthropic'
 
 export const runtime = 'nodejs'
 
@@ -27,15 +28,41 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ text: buffer.toString('utf-8'), type: 'text' })
     }
 
-    // PDF
+    // CSV
+    if (name.endsWith('.csv')) {
+      return NextResponse.json({ text: buffer.toString('utf-8'), type: 'csv' })
+    }
+
+    // PDF — use Anthropic API for reliable extraction in serverless (no native deps)
     if (name.endsWith('.pdf')) {
       try {
-        // @ts-ignore
-        const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default
-        const data = await pdfParse(buffer, { max: 15 })
-        return NextResponse.json({ text: data.text, pages: data.numpages, type: 'pdf' })
+        const base64 = buffer.toString('base64')
+        const client = getAnthropicClient()
+        const response = await client.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 4000,
+          messages: [{
+            role: 'user',
+            content: [
+              {
+                type: 'document',
+                source: {
+                  type: 'base64',
+                  media_type: 'application/pdf',
+                  data: base64,
+                },
+              } as any,
+              {
+                type: 'text',
+                text: 'Extract all text and financial data from this document. Include all numbers, tables, and figures exactly as shown. Return only the extracted content, no commentary.',
+              },
+            ],
+          }],
+        })
+        const text = response.content[0].type === 'text' ? response.content[0].text : ''
+        return NextResponse.json({ text, pages: 0, type: 'pdf' })
       } catch (pdfErr) {
-        console.error('pdf-parse error:', pdfErr)
+        console.error('PDF extraction error:', pdfErr)
         return NextResponse.json({
           text: `[PDF uploaded: ${file.name} — text extraction unavailable. Please describe the key figures verbally.]`,
           type: 'pdf',
@@ -45,21 +72,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // CSV
-    if (name.endsWith('.csv')) {
-      return NextResponse.json({ text: buffer.toString('utf-8'), type: 'csv' })
-    }
-
-    // Excel
+    // Excel — handle both CommonJS and ESM module shapes
     if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
       try {
-        // @ts-ignore
-        const XLSX = await import('xlsx')
+        const xlsxModule = await import('xlsx')
+        const XLSX = (xlsxModule as any).default ?? xlsxModule
         const workbook = XLSX.read(buffer, { type: 'buffer' })
+        const utils = XLSX.utils ?? (xlsxModule as any).default?.utils
         const lines: string[] = []
         for (const sheetName of workbook.SheetNames) {
           const sheet = workbook.Sheets[sheetName]
-          const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false })
+          const csv = utils.sheet_to_csv(sheet, { blankrows: false })
           if (csv.trim()) {
             lines.push(`--- Sheet: ${sheetName} ---`)
             lines.push(csv)
@@ -83,7 +106,6 @@ export async function POST(req: NextRequest) {
     )
   } catch (error) {
     console.error('Upload error:', error)
-    const msg = error instanceof Error ? error.message : 'Unknown error'
     if (file?.name) {
       return NextResponse.json({
         text: `[File uploaded: ${file.name} — could not read contents. Please describe the key figures verbally.]`,
@@ -91,6 +113,7 @@ export async function POST(req: NextRequest) {
         parseError: true,
       })
     }
+    const msg = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json({ error: `Failed to process file: ${msg}` }, { status: 500 })
   }
 }
