@@ -75,6 +75,7 @@ export async function POST(req: NextRequest) {
     // Excel — handle both CommonJS and ESM module shapes
     if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
       try {
+        // @ts-ignore
         const xlsxModule = await import('xlsx')
         const XLSX = (xlsxModule as any).default ?? xlsxModule
         const workbook = XLSX.read(buffer, { type: 'buffer' })
