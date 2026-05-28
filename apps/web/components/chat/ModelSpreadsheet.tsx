@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { cn, formatCurrency, formatCurrencyCompact } from '@/lib/utils'
-import type { ConversationState } from '@/types'
+import type { ConversationState, RevenueStream } from '@/types'
 
 // ───── CONSTANTS ──────────────────────────────────────────────────────────────
 
@@ -65,11 +65,12 @@ interface Row {
   indent?: boolean
 }
 
-type TabId = 'actual' | 'assumptions' | 'pl' | 'bs' | 'cf' | 'ratios'
+type TabId = 'actual' | 'assumptions' | 'revenue' | 'pl' | 'bs' | 'cf' | 'ratios'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'actual', label: 'Actual' },
   { id: 'assumptions', label: 'Assumptions' },
+  { id: 'revenue', label: 'Revenue' },
   { id: 'pl', label: 'P&L' },
   { id: 'bs', label: 'Balance Sheet' },
   { id: 'cf', label: 'Cash Flow' },
@@ -77,7 +78,7 @@ const TABS: { id: TabId; label: string }[] = [
 ]
 
 const STAGE_TAB: Record<number, TabId> = {
-  0: 'actual', 1: 'actual', 2: 'actual', 3: 'actual', 4: 'actual',
+  0: 'actual', 1: 'actual', 2: 'revenue', 3: 'actual', 4: 'actual',
   5: 'assumptions', 6: 'pl',
 }
 
@@ -138,11 +139,12 @@ function PadRow({ rowNum, even }: { rowNum: number; even: boolean }) {
   )
 }
 
-// ───── 3-STATEMENT MODEL ──────────────────────────────────────────────────────
+// ───── 3-STATEMENT MODEL: TYPES ───────────────────────────────────────────────
 
 interface FullProjection {
   label: string
   months: number
+  // P&L / SOPL
   revenue: number
   cogs: number
   grossProfit: number
@@ -159,6 +161,7 @@ interface FullProjection {
   ebt: number
   tax: number
   netProfit: number
+  // Balance Sheet / SOFP
   grossFixedAssets: number
   accumulatedDepreciation: number
   netFixedAssets: number
@@ -176,6 +179,7 @@ interface FullProjection {
   totalLiabilities: number
   totalEquityAndLiabilities: number
   balanceCheck: number
+  // Cash Flow
   cfNetProfit: number
   cfDepreciation: number
   cfARChange: number
@@ -189,6 +193,9 @@ interface FullProjection {
   netCashMovement: number
   openingCash: number
   closingCash: number
+  // Per-stream breakdown (null when single-stream)
+  streamRevenues: Array<{ name: string; revenue: number; cogs: number }> | null
+  // Ratios
   currentRatio: number | null
   quickRatio: number | null
   ebitdaMarginPct: number
@@ -227,6 +234,7 @@ interface FullModelParams {
   revenueCurrency: string | null
   priceGrowthAnnual: number | null
   salaryGrowthAnnual: number | null
+  revenueStreams: Array<{ name: string; monthlyRevenue: number; cogsMargin: number; priceGrowthAnnual: number }> | null
 }
 
 function buildFullModel(p: FullModelParams): FullProjection[] | null {
@@ -241,8 +249,13 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
   const initialCOGS = p.monthlyRevenue * cogsMargin
   const initialOpexMonthly = Math.max(0, initialBurn - initialCOGS)
 
+  // Price growth: if the founder plans annual price increases, COGS margin compresses over time.
+  // Revenue per unit rises but COGS per unit stays closer to the original cost → gross margin improves.
   const annualPriceGrowth = (p.priceGrowthAnnual ?? 0) / 100
+
+  // Salary growth: founder-provided annual %. No auto-inflation applied to any cost line.
   const annualSalaryGrowth = (p.salaryGrowthAnnual ?? 0) / 100
+
   const founderSalaryMonthly = p.founderSalaryMonthly ?? 0
   const taxPct = (p.taxRate ?? 0) / 100
   const taxStartYear = p.taxStartYear ?? null
@@ -258,7 +271,7 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
   const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
   const now = new Date()
   const startYear = now.getFullYear()
-  const startMonth = now.getMonth()
+  const startMonth = now.getMonth() // 0-indexed
 
   if (p.granularity === 'annual') {
     const yrs = p.horizon === '5yr' ? 5 : p.horizon === '3yr' ? 3 : 1
@@ -284,6 +297,7 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
     }
   }
 
+  // Opening balance sheet — derive retained earnings to balance at open
   const openingCash = p.currentCash ?? 0
   const openingFA = p.fixedAssets ?? 0
   const openingInv = p.inventoryValue ?? 0
@@ -300,26 +314,69 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
   let prevAP = 0
   let prevRevenue: number | null = null
 
+  const hasStreams = p.revenueStreams != null && p.revenueStreams.length > 0
+
   return periods.map(({ label, months }) => {
     const periodOpeningCash = cashBalance
     const periodYear = Math.floor(cumulativeMonth / 12) + 1
 
+    // P&L
     let revenue = 0
     let lastMonthRev = 0
+    const streamRevBuffers: number[] = hasStreams ? p.revenueStreams!.map(() => 0) : []
+
     for (let m = 0; m < months; m++) {
-      const mRev = p.monthlyRevenue! * Math.pow(1 + growth, cumulativeMonth)
-      revenue += mRev
+      const monthIdx = cumulativeMonth
+      if (hasStreams) {
+        let totalMonthRev = 0
+        p.revenueStreams!.forEach((s, si) => {
+          const sPG = s.priceGrowthAnnual / 100
+          const mRev = s.monthlyRevenue *
+            Math.pow(1 + growth, monthIdx) *
+            Math.pow(1 + sPG, monthIdx / 12)
+          streamRevBuffers[si] += mRev
+          totalMonthRev += mRev
+        })
+        revenue += totalMonthRev
+        if (m === months - 1) lastMonthRev = totalMonthRev
+      } else {
+        const mRev = p.monthlyRevenue! * Math.pow(1 + growth, monthIdx)
+        revenue += mRev
+        if (m === months - 1) lastMonthRev = mRev
+      }
       cumulativeMonth++
-      if (m === months - 1) lastMonthRev = mRev
     }
 
-    const cogsMarginEff = annualPriceGrowth > 0
-      ? Math.max(0.05, cogsMargin / Math.pow(1 + annualPriceGrowth, periodYear - 1))
-      : cogsMargin
-    const cogs = revenue * cogsMarginEff
+    // COGS: per-stream with individual price-growth compression, or aggregate
+    let cogs: number
+    let streamRevenues: Array<{ name: string; revenue: number; cogs: number }> | null = null
+
+    if (hasStreams) {
+      streamRevenues = p.revenueStreams!.map((s, si) => {
+        const streamRev = streamRevBuffers[si]
+        const sPG = s.priceGrowthAnnual / 100
+        const sCogsEff = sPG > 0
+          ? Math.max(0.05, s.cogsMargin / Math.pow(1 + sPG, periodYear - 1))
+          : s.cogsMargin
+        return { name: s.name, revenue: streamRev, cogs: streamRev * sCogsEff }
+      })
+      cogs = streamRevenues.reduce((acc, s) => acc + s.cogs, 0)
+    } else {
+      // COGS margin compression: as prices rise year-on-year, the founder earns more per unit
+      // but direct costs stay closer to original → gross margin improves over time.
+      const cogsMarginEff = annualPriceGrowth > 0
+        ? Math.max(0.05, cogsMargin / Math.pow(1 + annualPriceGrowth, periodYear - 1))
+        : cogsMargin
+      cogs = revenue * cogsMarginEff
+    }
+
     const grossProfit = revenue - cogs
     const grossMarginPct = revenue > 0 ? (grossProfit / revenue) * 100 : 0
 
+    // OPEX: no auto-inflation on any line.
+    // Salaries grow by salary_growth_annual (founder-provided) or stay flat.
+    // Marketing and G&A stay flat; if volume growth requires more marketing spend,
+    // the AI challenges this in Stage 5 and the founder updates burn accordingly.
     const salaryGrowthFactor = Math.pow(1 + annualSalaryGrowth, periodYear - 1)
     let salaries: number
     let marketing: number
@@ -345,11 +402,13 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
     const taxAmt = Math.max(0, ebt * effectiveTaxPct)
     const netProfit = ebt - taxAmt
 
+    // Working capital
     const arDays = p.daysReceivable ?? 0
     const apDays = p.daysPayable ?? 0
     const ar = lastMonthRev * (arDays / 30)
     const ap = lastMonthRev * cogsMargin * (apDays / 30)
 
+    // Cash Flow
     const cfARChange = -(ar - prevAR)
     const cfAPChange = ap - prevAP
     const cfOperating = netProfit + depAmt + cfARChange + cfAPChange
@@ -360,6 +419,7 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
     cashBalance = periodOpeningCash + netCashMovement
     const closingCash = cashBalance
 
+    // Balance Sheet
     grossFA += capex * months
     accumDep += depAmt
     const netFA = Math.max(0, grossFA - accumDep)
@@ -373,6 +433,7 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
     const totalEL = totalEquity + totalLiabilities
     const balanceCheck = totalAssets - totalEL
 
+    // Ratios
     const currentRatio = tcl > 0 ? tca / tcl : null
     const quickRatio = tcl > 0 ? (tca - openingInv) / tcl : null
     const ebitdaMarginPct = revenue > 0 ? (ebitda / revenue) * 100 : 0
@@ -410,6 +471,7 @@ function buildFullModel(p: FullModelParams): FullProjection[] | null {
       currentRatio, quickRatio, ebitdaMarginPct, netMarginPct, opexToRevenuePct,
       revenuePerEmployee: revPerEmp, burnMultiple, arDays: arDays || null,
       revenueGrowthPct, rule40, cashRunwayMonths,
+      streamRevenues,
     }
   })
 }
@@ -630,6 +692,135 @@ function ModelTable({
   )
 }
 
+function RevenueStreamTable({ projections, nativeCurrency, displayCurrency, isFX }: {
+  projections: FullProjection[]
+  nativeCurrency: string
+  displayCurrency: string
+  isFX: boolean
+}) {
+  const firstStreams = projections[0]?.streamRevenues
+  const streamNames = firstStreams && firstStreams.length > 0 ? firstStreams.map(s => s.name) : null
+
+  const fmtRev = (v: number) =>
+    formatCurrencyCompact(convertAmount(v, nativeCurrency, displayCurrency), displayCurrency)
+
+  return (
+    <div className="overflow-x-auto h-full">
+      <table className="min-w-full border-collapse text-xs">
+        <thead>
+          <tr className="bg-slate-100 border-b border-slate-200">
+            <th className="sticky left-0 z-10 bg-slate-100 w-52 min-w-[208px] px-3 py-2 text-left text-[11px] font-semibold text-slate-500 border-r border-slate-200">
+              Revenue Stream
+            </th>
+            {projections.map((p) => (
+              <th key={p.label} className="min-w-[90px] px-2 py-2 text-right text-[11px] font-semibold text-slate-500 border-r border-slate-200 last:border-r-0 whitespace-nowrap">
+                {p.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="bg-brand-light/60 border-b border-slate-200">
+            <td colSpan={projections.length + 1} className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-brand-navy">
+              Revenue by Stream
+            </td>
+          </tr>
+          {streamNames ? streamNames.map((name, si) => (
+            <tr key={`rev-${name}`} className={cn('border-b border-slate-100 hover:bg-brand-light/20', si % 2 === 0 ? 'bg-white' : 'bg-slate-50/40')}>
+              <td className={cn('sticky left-0 z-10 pl-6 pr-3 py-2 border-r border-slate-200 text-slate-500', si % 2 === 0 ? 'bg-white' : 'bg-slate-50/40')}>
+                {name}
+              </td>
+              {projections.map((p) => {
+                const rev = p.streamRevenues?.[si]?.revenue ?? null
+                return (
+                  <td key={p.label} className="px-2 py-2 text-right border-r border-slate-100 last:border-r-0 tabular-nums text-slate-700">
+                    {rev !== null ? fmtRev(rev) : '—'}
+                  </td>
+                )
+              })}
+            </tr>
+          )) : (
+            <tr className="border-b border-slate-100 bg-white">
+              <td className="sticky left-0 z-10 px-3 py-2 border-r border-slate-200 text-slate-500 bg-white">Total Revenue</td>
+              {projections.map((p) => (
+                <td key={p.label} className="px-2 py-2 text-right border-r border-slate-100 last:border-r-0 tabular-nums text-slate-700">
+                  {fmtRev(p.revenue)}
+                </td>
+              ))}
+            </tr>
+          )}
+          <tr className="border-b border-slate-200 bg-brand-light/20">
+            <td className="sticky left-0 z-10 px-3 py-2 border-r border-slate-200 font-semibold text-slate-700 bg-brand-light/20">
+              Total Revenue
+            </td>
+            {projections.map((p) => (
+              <td key={p.label} className="px-2 py-2 text-right border-r border-slate-100 last:border-r-0 tabular-nums font-semibold text-slate-700">
+                {fmtRev(p.revenue)}
+              </td>
+            ))}
+          </tr>
+
+          <tr className="bg-brand-light/60 border-b border-slate-200">
+            <td colSpan={projections.length + 1} className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-brand-navy">
+              Gross Profit by Stream
+            </td>
+          </tr>
+          {streamNames ? streamNames.map((name, si) => (
+            <tr key={`gp-${name}`} className={cn('border-b border-slate-100 hover:bg-brand-light/20', si % 2 === 0 ? 'bg-white' : 'bg-slate-50/40')}>
+              <td className={cn('sticky left-0 z-10 pl-6 pr-3 py-2 border-r border-slate-200 text-slate-500', si % 2 === 0 ? 'bg-white' : 'bg-slate-50/40')}>
+                {name}
+              </td>
+              {projections.map((p) => {
+                const s = p.streamRevenues?.[si]
+                const gp = s ? s.revenue - s.cogs : null
+                return (
+                  <td key={p.label} className={cn('px-2 py-2 text-right border-r border-slate-100 last:border-r-0 tabular-nums', gp !== null && gp >= 0 ? 'text-emerald-600' : 'text-red-500')}>
+                    {gp !== null ? fmtRev(gp) : '—'}
+                  </td>
+                )
+              })}
+            </tr>
+          )) : (
+            <tr className="border-b border-slate-100 bg-white">
+              <td className="sticky left-0 z-10 px-3 py-2 border-r border-slate-200 text-slate-500 bg-white">Gross Profit</td>
+              {projections.map((p) => (
+                <td key={p.label} className={cn('px-2 py-2 text-right border-r border-slate-100 last:border-r-0 tabular-nums', p.grossProfit >= 0 ? 'text-emerald-600' : 'text-red-500')}>
+                  {fmtRev(p.grossProfit)}
+                </td>
+              ))}
+            </tr>
+          )}
+          <tr className="border-b border-slate-100 bg-brand-light/20">
+            <td className="sticky left-0 z-10 px-3 py-2 border-r border-slate-200 font-semibold text-slate-700 bg-brand-light/20">
+              Total Gross Profit
+            </td>
+            {projections.map((p) => (
+              <td key={p.label} className={cn('px-2 py-2 text-right border-r border-slate-100 last:border-r-0 tabular-nums font-semibold', p.grossProfit >= 0 ? 'text-emerald-600' : 'text-red-500')}>
+                {fmtRev(p.grossProfit)}
+              </td>
+            ))}
+          </tr>
+          <tr className="border-b border-slate-100 bg-slate-50/40">
+            <td className="sticky left-0 z-10 pl-6 pr-3 py-2 border-r border-slate-200 text-slate-500 bg-slate-50/40">
+              Gross Margin %
+            </td>
+            {projections.map((p) => (
+              <td key={p.label} className={cn('px-2 py-2 text-right border-r border-slate-100 last:border-r-0 tabular-nums', p.grossMarginPct >= 50 ? 'text-emerald-600' : p.grossMarginPct >= 25 ? 'text-amber-500' : 'text-red-500')}>
+                {p.grossMarginPct.toFixed(1)}%
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
+      {isFX && (
+        <div className="px-4 py-2 text-[10px] text-amber-500 border-t border-slate-100">
+          Figures in {displayCurrency} at indicative FX rates.
+        </div>
+      )}
+    </div>
+  )
+}
+
 function EmptyModel({ message }: { message: string }) {
   return (
     <div className="flex flex-col items-center justify-center h-full text-center px-8 py-12">
@@ -658,7 +849,7 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
   }, [assumptions.revenue_currency, nativeCurrency])
 
   const isFX = displayCurrency !== nativeCurrency
-  const isModelTab = (['pl', 'bs', 'cf', 'ratios'] as TabId[]).includes(activeTab)
+  const isModelTab = (['revenue', 'pl', 'bs', 'cf', 'ratios'] as TabId[]).includes(activeTab)
 
   const fmt = (v: number | null | undefined) =>
     v != null ? formatCurrency(convertAmount(v, nativeCurrency, displayCurrency), displayCurrency) : null
@@ -690,6 +881,22 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
       ? Math.round(assumptions.monthly_revenue / assumptions.team_size)
       : null
 
+  // Build revenue streams array for multi-stream projection
+  const revenueStreams: FullModelParams['revenueStreams'] = (() => {
+    const raw = assumptions.revenue_streams
+    if (!raw || raw.length === 0) return null
+    const mapped = raw
+      .filter((s): s is RevenueStream & { monthly_revenue: number } => s.monthly_revenue != null)
+      .map(s => ({
+        name: s.name,
+        monthlyRevenue: s.monthly_revenue!,
+        cogsMargin: s.cogs_margin ?? (1 - (assumptions.gross_margin ?? 40) / 100),
+        priceGrowthAnnual: s.price_growth_annual ?? 0,
+      }))
+    return mapped.length > 0 ? mapped : null
+  })()
+
+  // Build full 3-statement model
   const projections = buildFullModel({
     monthlyRevenue: assumptions.monthly_revenue ?? null,
     monthlyCOGS: assumptions.monthly_cogs ?? null,
@@ -715,8 +922,19 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
     revenueCurrency: assumptions.revenue_currency ?? null,
     priceGrowthAnnual: assumptions.price_growth_annual ?? null,
     salaryGrowthAnnual: assumptions.salary_growth_annual ?? null,
+    revenueStreams,
   })
 
+  // Revenue streams section for Actual tab
+  const streamRows: Row[] = assumptions.revenue_streams && assumptions.revenue_streams.length > 1
+    ? assumptions.revenue_streams.map(s => ({
+        label: s.name,
+        value: s.monthly_revenue != null ? fmt(s.monthly_revenue) : null,
+        indent: true,
+      }))
+    : []
+
+  // Actual tab
   const actualSections: { title: string; rows: Row[] }[] = [
     {
       title: 'Income Statement',
@@ -725,6 +943,7 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
           label: assumptions.is_pre_revenue ? 'Revenue (Pre-revenue)' : 'Monthly Revenue',
           value: assumptions.is_pre_revenue ? 'Pre-revenue' : fmt(assumptions.monthly_revenue),
         },
+        ...streamRows,
         { label: 'Cost of Goods (COGS)', value: fmt(cogs), indent: true },
         { label: 'Gross Profit', value: fmt(grossProfit) },
         { label: 'Gross Margin', value: assumptions.gross_margin != null ? `${assumptions.gross_margin}%` : null },
@@ -762,6 +981,7 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
     },
   ]
 
+  // Assumptions tab
   const assumptionsSections: { title: string; rows: Row[] }[] = [
     {
       title: 'Model Setup',
@@ -783,6 +1003,17 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
         { label: 'Gross Margin Target', value: assumptions.gross_margin != null ? `${assumptions.gross_margin}%` : null },
         { label: 'Pricing Model', value: assumptions.pricing_model ?? null },
         { label: 'Customer Count', value: assumptions.customer_count != null ? assumptions.customer_count.toLocaleString() : null },
+        ...(assumptions.revenue_streams && assumptions.revenue_streams.length > 0
+          ? assumptions.revenue_streams.map(s => ({
+              label: `→ ${s.name}`,
+              value: [
+                s.monthly_revenue != null ? fmt(s.monthly_revenue) : null,
+                s.cogs_margin != null ? `${Math.round(s.cogs_margin * 100)}% COGS` : null,
+                s.price_growth_annual != null ? `+${s.price_growth_annual}%/yr` : null,
+              ].filter(Boolean).join(' · ') || null,
+              indent: true,
+            }))
+          : []),
       ],
     },
     {
@@ -895,6 +1126,11 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
       <div className="flex-1 overflow-y-auto">
         {activeTab === 'actual' && renderSections(actualSections)}
         {activeTab === 'assumptions' && renderSections(assumptionsSections)}
+        {activeTab === 'revenue' && (
+          projections
+            ? <RevenueStreamTable projections={projections} nativeCurrency={nativeCurrency} displayCurrency={displayCurrency} isFX={isFX} />
+            : <EmptyModel message="Revenue breakdown needs at least one revenue figure." />
+        )}
         {activeTab === 'pl' && (
           projections
             ? <ModelTable projections={projections} rowDefs={PL_ROWS} nativeCurrency={nativeCurrency} displayCurrency={displayCurrency} isFX={isFX} disclaimer="Salaries grow by salary_growth_annual if provided, else flat. COGS margin compresses if price_growth_annual is set. Marketing and G&A are flat unless burn is revised." />
@@ -917,7 +1153,7 @@ export function ModelSpreadsheet({ state }: { state: ConversationState }) {
         )}
       </div>
 
-      {/* Tab bar */}
+      {/* Tab bar — Excel style */}
       <div className="shrink-0 flex items-end gap-0.5 border-t border-slate-200 bg-slate-100 px-3 pt-1.5 overflow-x-auto">
         {TABS.map((tab) => (
           <button
